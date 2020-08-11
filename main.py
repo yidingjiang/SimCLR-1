@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 import utils
 from model import OriginalModel
-
+import wandb
 
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
@@ -102,7 +102,9 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', default=500, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--model_type', default='original', type=str, help='Type of model to train - original SimCLR or Proposed')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')
-
+    parser.add_argument('--use_wandb', default=True, type=bool, help='Log results to wandb')
+    
+    wandb.init(project="contrastive learning", config=args)
     # args parse
     args = parser.parse_args()
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
@@ -158,6 +160,9 @@ if __name__ == '__main__':
         test_acc_1, test_acc_5 = test(model, memory_loader, test_loader)
         results['test_acc@1'].append(test_acc_1)
         results['test_acc@5'].append(test_acc_5)
+        if args.use_wandb:
+            wandb.log({"epoch": epoch, "train loss": total_loss, "test_acc@1": test_acc_1, "test_acc@5": test_acc_5})
+
         # save statistics
         data_frame = pd.DataFrame(data=results, index=range(1, epoch + 1))
         data_frame.to_csv('results/{}_statistics.csv'.format(save_name_pre), index_label='epoch')

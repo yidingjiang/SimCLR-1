@@ -128,8 +128,6 @@ if __name__ == '__main__':
         test_data = utils.CIFAR10Pair(root='data', train=False, transform=utils.test_transform, download=True)
         test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
-    ##### wandb config ######
-
     print("Data prepared. Now initializing out Model...")
     # model setup and optimizer config
     model = ProposedModel(feature_dim=feature_dim, norm_type=args.norm_type, output_norm=args.output_norm)
