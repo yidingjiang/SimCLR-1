@@ -101,14 +101,15 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=512, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--epochs', default=500, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--model_type', default='original', type=str, help='Type of model to train - original SimCLR or Proposed')
-    parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')
+    parser.add_argument('--num_workers', default=16, type=int, help='number of workers to load data')
     parser.add_argument('--use_wandb', default=True, type=bool, help='Log results to wandb')
-    
-    wandb.init(project="contrastive learning", config=args)
+
     # args parse
     args = parser.parse_args()
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
     batch_size, epochs = args.batch_size, args.epochs
+    
+    wandb.init(project="contrastive learning", config=args)
 
     cuda_available = torch.cuda.is_available()
 
