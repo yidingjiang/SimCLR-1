@@ -20,6 +20,21 @@ class CIFAR10Pair(CIFAR10):
 
         return pos_1, pos_2, target
 
+class CIFAR10Data(CIFAR10):
+    """CIFAR10 Dataset.
+    """
+
+    def __getitem__(self, index):
+        img, target = self.data[index], self.targets[index]
+        img = Image.fromarray(img)
+
+        if self.transform is not None:
+            pos = self.transform(img)
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return pos, target
 
 train_transform = transforms.Compose([
     transforms.RandomResizedCrop(32),

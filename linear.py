@@ -10,15 +10,19 @@ from torchvision.datasets import CIFAR10
 from tqdm import tqdm
 
 import utils
-from model import Model
+from model import OriginalModel, ProposedModel
 
 
 class Net(nn.Module):
-    def __init__(self, num_class, pretrained_path):
+    def __init__(self, num_class, pretrained_path, use_original=False):
         super(Net, self).__init__()
 
         # encoder
-        self.f = Model().f
+        if use_original:
+            self.f = OriginalModel().f
+        else:
+            self.f = ProposedModel().f
+
         # classifier
         self.fc = nn.Linear(2048, num_class, bias=True)
         self.load_state_dict(torch.load(pretrained_path, map_location='cpu'), strict=False)
@@ -28,7 +32,6 @@ class Net(nn.Module):
         feature = torch.flatten(x, start_dim=1)
         out = self.fc(feature)
         return out
-
 
 # train or test for one epoch
 def train_val(net, data_loader, train_optimizer):
@@ -66,6 +69,7 @@ if __name__ == '__main__':
                         help='The pretrained model path')
     parser.add_argument('--batch_size', type=int, default=512, help='Number of images in each mini-batch')
     parser.add_argument('--epochs', type=int, default=100, help='Number of sweeps over the dataset to train')
+    parser.add_argument('--model_type', type=str, default='proposed', help='Type of model to train - original SimCLR (original) or Proposed (proposed)')
 
     args = parser.parse_args()
     model_path, batch_size, epochs = args.model_path, args.batch_size, args.epochs
@@ -74,7 +78,11 @@ if __name__ == '__main__':
     test_data = CIFAR10(root='data', train=False, transform=utils.test_transform, download=True)
     test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=16, pin_memory=True)
 
-    model = Net(num_class=len(train_data.classes), pretrained_path=model_path).cuda()
+    use_original = False
+    if args.model_type == 'original':
+        use_original = True
+    model = Net(num_class=len(train_data.classes), pretrained_path=model_path, use_original=use_original).cuda()
+
     for param in model.f.parameters():
         param.requires_grad = False
 
