@@ -162,7 +162,7 @@ if __name__ == '__main__':
         results['test_acc@1'].append(test_acc_1)
         results['test_acc@5'].append(test_acc_5)
         if args.use_wandb:
-            wandb.log({"epoch": epoch, "train loss": total_loss, "test_acc@1": test_acc_1, "test_acc@5": test_acc_5})
+            wandb.log({"epoch": epoch, "train loss": train_loss, "test_acc@1": test_acc_1, "test_acc@5": test_acc_5})
 
         # save statistics
         data_frame = pd.DataFrame(data=results, index=range(1, epoch + 1))
