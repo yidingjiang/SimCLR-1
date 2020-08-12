@@ -46,7 +46,7 @@ def train(net, data_loader, train_optimizer):
 
 
 # test for one epoch, use weighted knn to find the most similar images' label to assign the test image
-def test(net, memory_data_loader, test_data_loader):
+def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
     net.eval()
     total_top1, total_top5, total_num, feature_bank = 0.0, 0.0, 0, []
     with torch.no_grad():
@@ -89,6 +89,23 @@ def test(net, memory_data_loader, test_data_loader):
             total_top5 += torch.sum((pred_labels[:, :5] == target.unsqueeze(dim=-1)).any(dim=-1).float()).item()
             test_bar.set_description('Test Epoch: [{}/{}] Acc@1:{:.2f}% Acc@5:{:.2f}%'
                                      .format(epoch, epochs, total_top1 / total_num * 100, total_top5 / total_num * 100))
+            if plot_img:
+                fig, axs = plt.subplots(10, 7)
+                target = target.cpu().detach().numpy()
+                sim_indices = sim_indices.cpu().detach().numpy()
+                for label in range(10):
+                    cur_index = np.where(target == label)[0][0]
+                    cur_img = data[cur_index].cpu().detach().numpy()
+                    cur_features = feature[cur_index].cpu().detach().numpy()
+
+                    ax[label][0].imshow(cur_img)
+                    ax[label][1].imshow(cur_features)
+
+                    for offset, index in enumerate(sim_indices[cur_index][:5]):
+                        ax[label][2 + offset].imshow(feature_bank[:, index].cpu().detach().numpy())
+                
+                fig.savefig('plot.png')
+                wandb.log({"Features of k-NN; k=5": [wandb.Image(Image.open('plot.png')), caption=f"feature @epoch {epoch}"]})
 
     return total_top1 / total_num * 100, total_top5 / total_num * 100
 
@@ -158,7 +175,12 @@ if __name__ == '__main__':
     for epoch in range(1, epochs + 1):
         train_loss = train(model, train_loader, optimizer)
         results['train_loss'].append(train_loss)
-        test_acc_1, test_acc_5 = test(model, memory_loader, test_loader)
+
+        plot_img = False
+        if (epoch-1) % 20 == 0 or epoch == epochs - 1:
+            plot_img = True
+        test_acc_1, test_acc_5 = test(model, memory_loader, test_loader, epoch, plot_img=plot_img)
+
         results['test_acc@1'].append(test_acc_1)
         results['test_acc@5'].append(test_acc_5)
         if args.use_wandb:
