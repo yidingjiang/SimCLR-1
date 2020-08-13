@@ -128,7 +128,9 @@ if __name__ == '__main__':
     parser.add_argument('--model_type', default='original', type=str, help='Type of model to train - original SimCLR or Proposed')
     parser.add_argument('--num_workers', default=16, type=int, help='number of workers to load data')
     parser.add_argument('--use_wandb', default=True, type=bool, help='Log results to wandb')
-
+    parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
+    parser.add_argument('--weight_decay', default=1e-6, type=float, help='learning rate')
+    
     # args parse
     args = parser.parse_args()
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
@@ -170,7 +172,7 @@ if __name__ == '__main__':
     flops, params = profile(model, inputs=(inputs,))
     flops, params = clever_format([flops, params])
     print('# Model Params: {} FLOPs: {}'.format(params, flops))
-    optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-6)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     c = len(memory_data.classes)
 
     # training loop
