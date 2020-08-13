@@ -11,6 +11,9 @@ from tqdm import tqdm
 import utils
 from model import OriginalModel
 import wandb
+import numpy as np
+import matplotlib as plt 
+from PIL import Image
 
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
@@ -49,6 +52,7 @@ def train(net, data_loader, train_optimizer):
 def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
     net.eval()
     total_top1, total_top5, total_num, feature_bank = 0.0, 0.0, 0, []
+    all_data = []
     with torch.no_grad():
         # generate feature bank
         for data, _, target in tqdm(memory_data_loader, desc='Feature extracting'):
@@ -56,8 +60,13 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
                 data = data.cuda(non_blocking=True)
             feature, out = net(data)
             feature_bank.append(feature)
+            all_data.append(data)
         # [D, N]
         feature_bank = torch.cat(feature_bank, dim=0).t().contiguous()
+
+        # [N, 3, 32, 32]
+        all_data = torch.cat(all_data, dim=0).contiguous()
+
         # [N]
         feature_labels = torch.tensor(memory_data_loader.dataset.targets, device=feature_bank.device)
         # loop test data to predict the label by weighted knn search
@@ -98,14 +107,13 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
                     cur_img = data[cur_index].cpu().detach().numpy()
                     cur_features = feature[cur_index].cpu().detach().numpy()
 
-                    ax[label][0].imshow(cur_img)
-                    ax[label][1].imshow(cur_features)
+                    axs[label][0].imshow(cur_img.reshape(32,32,3))
 
                     for offset, index in enumerate(sim_indices[cur_index][:5]):
-                        ax[label][2 + offset].imshow(feature_bank[:, index].cpu().detach().numpy())
+                        axs[label][2 + offset].imshow(all_data[index].cpu().detach().numpy().reshape(32,32,3))
                 
                 fig.savefig('plot.png')
-                wandb.log({"Features of k-NN; k=5": [wandb.Image(Image.open('plot.png')), caption=f"feature @epoch {epoch}"]})
+                wandb.log({"Features of k-NN; k=5": [wandb.Image(Image.open('plot.png'), caption=f"feature @epoch {epoch}")]})
 
     return total_top1 / total_num * 100, total_top5 / total_num * 100
 
