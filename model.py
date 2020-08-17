@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models.resnet import resnet50
+from torchvision.models.resnet import resnet50, resnet34
 
 import torchvision
 import torchvision.transforms.functional as FT
@@ -55,12 +55,13 @@ class AugmentationModule(nn.Module):
         return x
 
 class ProposedModel(nn.Module):
-    def __init__(self, feature_dim=128, norm_type='layer', output_norm='layer'):
+    def __init__(self, feature_dim=128, norm_type='layer', output_norm='layer', model='resnet34'):
         super(ProposedModel, self).__init__()
-
+        
+        resnet = resnet34 if model == 'resnet34' else resnet50
         self.output_norm = output_norm
         self.f = []
-        for name, module in resnet50().named_children():
+        for name, module in resnet().named_children():
             if name == 'conv1':
                 module = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
             if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
@@ -68,7 +69,11 @@ class ProposedModel(nn.Module):
         # encoder
         self.f = nn.Sequential(*self.f)
 
-        proj_layers = [nn.Linear(2048, 512, bias=False)]
+        if model == 'resnet34':
+            proj_layers = [nn.Linear(512, 512, bias=False)]
+        elif model == 'resnet50':
+            proj_layers = [nn.Linear(2048, 512, bias=False)]
+
         if norm_type is not None:
             if norm_type == 'batch':
                 proj_layers.append(nn.BatchNorm1d(512))
@@ -91,6 +96,7 @@ class ProposedModel(nn.Module):
         x = self.augment(x, rot_mat)
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
+        import pdb; pdb.set_trace()
         out = self.g(feature)
         if self.output_norm is None:
             return F.normalize(feature, dim=-1), F.normalize(out, dim=-1)

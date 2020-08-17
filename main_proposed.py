@@ -81,7 +81,7 @@ def train(net, data_loader, train_optimizer):
 
         loss = sim_matrix.sum(dim=-1).mean()
         
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         #rot_mat_grad = torch.autograd.grad(outputs=rot_mat, inputs=theta, grad_outputs=torch.ones_like(rot_mat), create_graph=True)
         
         # grad_params = torch.autograd.grad(outputs=out, inputs=net.augment.rot_mat, grad_outputs=torch.ones_like(out), create_graph=True)
@@ -99,26 +99,24 @@ def train(net, data_loader, train_optimizer):
                         create_graph=True
                     )[0]
                 )
-            import pdb; pdb.set_trace()
             grad = torch.cat(grad)
             grad_norm += (torch.sum(grad ** 2) + 1e-12)
         
+        grad_norm /= args.batch_size
 
-        import pdb; pdb.set_trace()
-        grad_params = torch.stack(grad) # [B, 128]
+        # import pdb; pdb.set_trace()
 
+        # grad_params_2 = torch.autograd.grad(outputs=out, inputs=theta, 
+        #                                     grad_outputs=torch.ones_like(out).cuda() if cuda_available else torch.ones_like(out), 
+        #                                     create_graph=True)
 
-        grad_params_2 = torch.autograd.grad(outputs=out, inputs=theta, 
-                                            grad_outputs=torch.ones_like(out).cuda() if cuda_available else torch.ones_like(out), 
-                                            create_graph=True)
+        # grad_params_2 = grad_params_2.view(args.batch_size, -1)
+        # grad_norm2 = torch.sqrt(torch.sum(grad_params_2 ** 2, dim=1) + 1e-12)
 
-        grad_params_2 = grad_params_2.view(args.batch_size, -1)
-        grad_norm2 = torch.sqrt(torch.sum(grad_params_2 ** 2, dim=1) + 1e-12)
-
-        grad_norm = 0
-        # This is of shape # [512, 2, 3]
-        for grad in grad_params:          
-            grad_norm += torch.mean(torch.norm(grad, dim=(1, 2)))
+        # grad_norm = 0
+        # # This is of shape # [512, 2, 3]
+        # for grad in grad_params:          
+        #     grad_norm += torch.mean(torch.norm(grad, dim=(1, 2)))
         
         loss += grad_norm
 
