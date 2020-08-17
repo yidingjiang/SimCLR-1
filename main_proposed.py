@@ -19,15 +19,20 @@ from PIL import Image
 
 def get_affine_transform_tensors(batch_size):
     torch_pi = torch.acos(torch.zeros(1)).item() * 2
-    if cuda_available:
-        torch_pi = torch_pi.cuda()
     theta = 2 * torch_pi * torch.rand(1, requires_grad=True) - torch_pi
     if cuda_available:
         theta = theta.cuda()
 
     #theta = torch.Tensor([np.random.uniform(low=-np.pi, high=np.pi)])
     # [2,3]
-    rot_mat = torch.stack((torch.cat((torch.cos(theta), torch.sin(theta), torch.zeros(1))), torch.cat((-torch.sin(theta), torch.cos(theta), torch.zeros(1)))))
+    if cuda_available:
+        rot_mat = torch.stack(( torch.cat((torch.cos(theta).cuda(), torch.sin(theta).cuda(), torch.zeros(1).cuda())), 
+                                torch.cat((-torch.sin(theta).cuda(), torch.cos(theta).cuda(), torch.zeros(1).cuda()))
+                                ))
+    else:
+        rot_mat = torch.stack(( torch.cat((torch.cos(theta), torch.sin(theta), torch.zeros(1))), 
+                                torch.cat((-torch.sin(theta), torch.cos(theta), torch.zeros(1)))
+                                ))
     # replicate it [B, 2, 3]
     # grad = torch.autograd.grad( outputs=rot_mat, inputs=theta, 
     #                             grad_outputs=torch.ones_like(rot_mat).cuda() if cuda_available else torch.ones_like(rot_mat) , 
