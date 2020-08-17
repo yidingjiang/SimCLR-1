@@ -12,7 +12,7 @@ class OriginalModel(nn.Module):
         super(OriginalModel, self).__init__()
 
         self.f = []
-        for name, module in resnet50().named_children():
+        for name, module in resnet34().named_children():
             if name == 'conv1':
                 module = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
             if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
