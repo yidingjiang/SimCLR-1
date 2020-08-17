@@ -27,8 +27,13 @@ def get_affine_transform_tensors(batch_size):
                         torch.cat((-torch.sin(theta), torch.cos(theta), torch.zeros(1)))
                         ))
     # replicate it [B, 2, 3]
-    grad = torch.autograd.grad(outputs=rot_mat, inputs=theta, grad_outputs=torch.ones_like(rot_mat), create_graph=True)
+    # grad = torch.autograd.grad( outputs=rot_mat, inputs=theta, 
+    #                             grad_outputs=torch.ones_like(rot_mat).cuda() if cuda_available else torch.ones_like(rot_mat) , 
+    #                             create_graph=True)
     rot_mat = rot_mat.repeat(batch_size, 1, 1)
+    if cuda_available:
+        theta = theta.cuda()
+        rot_mat = rot_mat.cuda()
     return theta, rot_mat
 
 # def get_affine_transform_tensors():
@@ -93,7 +98,10 @@ def train(net, data_loader, train_optimizer):
         grad_params = torch.stack(grad) # [B, 128]
 
 
-        grad_params_2 = torch.autograd.grad(outputs=out, inputs=theta, grad_outputs=torch.ones_like(out), create_graph=True)
+        grad_params_2 = torch.autograd.grad(outputs=out, inputs=theta, 
+                                            grad_outputs=torch.ones_like(out).cuda() is cuda_available else torch.ones_like(out), 
+                                            create_graph=True)
+                                            
         grad_params_2 = grad_params_2.view(args.batch_size, -1)
         grad_norm2 = torch.sqrt(torch.sum(grad_params_2 ** 2, dim=1) + 1e-12)
 
