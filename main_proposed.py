@@ -19,20 +19,21 @@ from PIL import Image
 
 def get_affine_transform_tensors(batch_size):
     torch_pi = torch.acos(torch.zeros(1)).item() * 2
+    if cuda_available:
+        torch_pi = torch_pi.cuda()
     theta = 2 * torch_pi * torch.rand(1, requires_grad=True) - torch_pi
+    if cuda_available:
+        theta = theta.cuda()
+
     #theta = torch.Tensor([np.random.uniform(low=-np.pi, high=np.pi)])
     # [2,3]
-    rot_mat = torch.stack((
-                        torch.cat((torch.cos(theta), torch.sin(theta), torch.zeros(1))), 
-                        torch.cat((-torch.sin(theta), torch.cos(theta), torch.zeros(1)))
-                        ))
+    rot_mat = torch.stack((torch.cat((torch.cos(theta), torch.sin(theta), torch.zeros(1))), torch.cat((-torch.sin(theta), torch.cos(theta), torch.zeros(1)))))
     # replicate it [B, 2, 3]
     # grad = torch.autograd.grad( outputs=rot_mat, inputs=theta, 
     #                             grad_outputs=torch.ones_like(rot_mat).cuda() if cuda_available else torch.ones_like(rot_mat) , 
     #                             create_graph=True)
     rot_mat = rot_mat.repeat(batch_size, 1, 1)
     if cuda_available:
-        theta = theta.cuda()
         rot_mat = rot_mat.cuda()
     return theta, rot_mat
 
@@ -88,7 +89,7 @@ def train(net, data_loader, train_optimizer):
                 torch.autograd.grad(
                     outputs=out[:, i].view(args.batch_size, 1),
                     inputs=theta,
-                    grad_outputs=torch.ones_like(out[:, i]),
+                    grad_outputs=torch.ones((args.batch_size, 1)),
                     retain_graph=True, 
                     create_graph=True
                 )[0]
@@ -101,7 +102,7 @@ def train(net, data_loader, train_optimizer):
         grad_params_2 = torch.autograd.grad(outputs=out, inputs=theta, 
                                             grad_outputs=torch.ones_like(out).cuda() is cuda_available else torch.ones_like(out), 
                                             create_graph=True)
-                                            
+
         grad_params_2 = grad_params_2.view(args.batch_size, -1)
         grad_norm2 = torch.sqrt(torch.sum(grad_params_2 ** 2, dim=1) + 1e-12)
 
