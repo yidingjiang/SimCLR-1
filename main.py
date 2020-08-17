@@ -12,7 +12,7 @@ import utils
 from model import OriginalModel
 import wandb
 import numpy as np
-import matplotlib as plt 
+import matplotlib.pyplot as plt 
 from PIL import Image
 
 # train for one epoch to learn unique features
@@ -130,7 +130,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_wandb', default=True, type=bool, help='Log results to wandb')
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='learning rate')
-    
+
     # args parse
     args = parser.parse_args()
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
@@ -187,8 +187,8 @@ if __name__ == '__main__':
         results['train_loss'].append(train_loss)
 
         plot_img = False
-        if (epoch-1) % 20 == 0 or epoch == epochs - 1:
-            plot_img = True
+        # if (epoch-1) % 20 == 0 or epoch == epochs - 1:
+        #     plot_img = True
         test_acc_1, test_acc_5 = test(model, memory_loader, test_loader, epoch, plot_img=plot_img)
 
         results['test_acc@1'].append(test_acc_1)

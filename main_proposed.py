@@ -13,17 +13,54 @@ from model import ProposedModel
 import wandb
 
 import numpy as np
-import matplotlib as plt 
+import matplotlib.pyplot as plt 
 from PIL import Image
+
+
+def get_affine_transform_tensors(batch_size):
+    torch_pi = torch.acos(torch.zeros(1)).item() * 2
+    theta = 2 * torch_pi * torch.rand(1, requires_grad=True) - torch_pi
+    #theta = torch.Tensor([np.random.uniform(low=-np.pi, high=np.pi)])
+    # [2,3]
+    rot_mat = torch.stack((
+                        torch.cat((torch.cos(theta), torch.sin(theta), torch.zeros(1))), 
+                        torch.cat((-torch.sin(theta), torch.cos(theta), torch.zeros(1)))
+                        ))
+    # replicate it [B, 2, 3]
+    grad = torch.autograd.grad(outputs=rot_mat, inputs=theta, grad_outputs=torch.ones_like(rot_mat), create_graph=True)
+    rot_mat = rot_mat.repeat(batch_size, 1, 1)
+    return theta, rot_mat
+
+# def get_affine_transform_tensors():
+#     theta = torch.tensor(np.random.uniform(low=-np.pi, high=np.pi))
+#     rot_mat = torch.tensor([[torch.cos(theta), torch.sin(theta)], [-torch.sin(theta), torch.cos(theta)]], dtype=torch.float)
+#     rot_mat = rot_mat.repeat(batch_size, 1, 1)
+
+#     theta = 2 * torch_pi * torch.rand(1) - torch_pi
+#     zero = torch.zeros(1)
+
+#     rot_mat = torch.stack([
+#             torch.stack([torch.cos(theta), torch.sin(theta), zero]), 
+#             torch.stack([-torch.sin(theta), torch.cos(theta), zero])
+#         ], dtype=torch.float)
+
+#     self.rot_mat = nn.Parameter(rot_mat.repeat(batch_size, 1, 1))
+
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
+    # for name, param in  net.named_parameters():
+    #     if param.requires_grad:
+    #         print(name, param.data)
+
     net.train()
     total_loss, total_num, train_bar = 0.0, 0, tqdm(data_loader)
     for pos, target in train_bar:
         if cuda_available:
             pos = pos.cuda(non_blocking=True)
+
+        theta, rot_mat = get_affine_transform_tensors(args.batch_size)
         # [B, D]
-        feature, out = net(pos)
+        feature, out = net(pos, rot_mat)
 
         # [B, B]
         sim_matrix = torch.mm(out, out.t().contiguous())
@@ -32,8 +69,45 @@ def train(net, data_loader, train_optimizer):
         sim_matrix = sim_matrix.masked_select(mask).view(batch_size, -1)
 
         loss = sim_matrix.sum(dim=-1).mean()
+        
+        import pdb; pdb.set_trace()
+        #rot_mat_grad = torch.autograd.grad(outputs=rot_mat, inputs=theta, grad_outputs=torch.ones_like(rot_mat), create_graph=True)
+        
+        # grad_params = torch.autograd.grad(outputs=out, inputs=net.augment.rot_mat, grad_outputs=torch.ones_like(out), create_graph=True)
+        # rot_mat_grad = torch.autograd.grad(outputs=net.augment.rot_mat, inputs=net.augment.theta, grad_outputs=torch.ones_like(net.augment.rot_mat), create_graph=True)
+        grad = []
+        for i in range(out.size(1)):
+            print(i)
+            print(grad)
+            grad.append(
+                torch.autograd.grad(
+                    outputs=out[:, i].view(args.batch_size, 1),
+                    inputs=theta,
+                    grad_outputs=torch.ones_like(out[:, i]),
+                    retain_graph=True, 
+                    create_graph=True
+                )[0]
+            )
+        
+        import pdb; pdb.set_trace()
+        grad_params = torch.stack(grad) # [B, 128]
+
+
+        grad_params_2 = torch.autograd.grad(outputs=out, inputs=theta, grad_outputs=torch.ones_like(out), create_graph=True)
+        grad_params_2 = grad_params_2.view(args.batch_size, -1)
+        grad_norm2 = torch.sqrt(torch.sum(grad_params_2 ** 2, dim=1) + 1e-12)
+
+        grad_norm = 0
+        # This is of shape # [512, 2, 3]
+        for grad in grad_params:          
+            grad_norm += torch.mean(torch.norm(grad, dim=(1, 2)))
+        
+        loss += grad_norm
+
         train_optimizer.zero_grad()
         loss.backward()
+
+
         train_optimizer.step()
 
         total_num += batch_size
@@ -102,7 +176,7 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
                         ax[label][2 + offset].imshow(feature_bank[:, index].cpu().detach().numpy())
                 
                 fig.savefig('plot.png')
-                wandb.log({"Features of k-NN; k=5": [wandb.Image(Image.open('plot.png')), caption=f"feature @epoch {epoch}"]})
+                wandb.log({"Features of k-NN; k=5": [wandb.Image(Image.open('plot.png'), caption=f"feature @epoch {epoch}")]})
 
     return total_top1 / total_num * 100, total_top5 / total_num * 100
 
@@ -111,11 +185,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train SimCLR')
     parser.add_argument('--feature_dim', default=128, type=int, help='Feature dim for latent vector')
     parser.add_argument('--k', default=200, type=int, help='Top k most similar images used to predict the label')
-    parser.add_argument('--batch_size', default=512, type=int, help='Number of images in each mini-batch')
+    parser.add_argument('--batch_size', default=64, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--epochs', default=150, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--model_type', default='proposed', type=str, help='Type of model to train - original SimCLR (original) or Proposed (proposed)')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')
-    parser.add_argument('--use_wandb', default=True, type=bool, help='Log results to wandb')
+    parser.add_argument('--use_wandb', default=False, type=bool, help='Log results to wandb')
     parser.add_argument('--norm_type', default='batch', type=str, help="Type of norm to use in between FC layers of the projection head")
     parser.add_argument('--output_norm', default=None, type=str, help="Norm to use at the output")
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
@@ -125,42 +199,43 @@ if __name__ == '__main__':
     feature_dim, k = args.feature_dim, args.k
     batch_size, epochs = args.batch_size, args.epochs
     
-    wandb.init(project="contrastive learning", config=args)
+    if args.use_wandb:
+        wandb.init(project="contrastive learning", config=args)
 
     cuda_available = torch.cuda.is_available()
     print("Preparing data...")
-    if args.model_type == 'proposed':
-        # data prepare
-        train_data = utils.CIFAR10Data(root='data', train=True, transform=utils.train_transform, download=True)
-        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True,
-                                drop_last=True)
-        memory_data = utils.CIFAR10Data(root='data', train=True, transform=utils.test_transform, download=True)
-        memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
-        test_data = utils.CIFAR10Data(root='data', train=False, transform=utils.test_transform, download=True)
-        test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
-    elif args.model_type == 'original':
-        # data prepare
-        train_data = utils.CIFAR10Pair(root='data', train=True, transform=utils.train_transform, download=True)
-        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True,
-                                drop_last=True)
-        memory_data = utils.CIFAR10Pair(root='data', train=True, transform=utils.test_transform, download=True)
-        memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
-        test_data = utils.CIFAR10Pair(root='data', train=False, transform=utils.test_transform, download=True)
-        test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
+    # data prepare
+    train_data = utils.CIFAR10Data(root='data', train=True,
+                                    transform=utils.train_normalize_transform,
+                                    download=True)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True,
+                            drop_last=True)
 
+    memory_data = utils.CIFAR10Data(root='data', train=True, 
+                                    transform=utils.test_transform, 
+                                    download=True)
+    memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
+
+    test_data = utils.CIFAR10Data(root='data', train=False, 
+                                    transform=utils.test_transform, 
+                                    download=True)
+    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
+    
     print("Data prepared. Now initializing out Model...")
     # model setup and optimizer config
     model = ProposedModel(feature_dim=feature_dim, norm_type=args.norm_type, output_norm=args.output_norm)
     inputs = torch.randn(1, 3, 32, 32)
+    theta = torch.Tensor(1)
+
     if cuda_available:
         model = model.cuda()
         inputs = inputs.cuda()
-    flops, params = profile(model, inputs=(inputs,))
-    flops, params = clever_format([flops, params])
-    print('# Model Params: {} FLOPs: {}'.format(params, flops))
+    # flops, params = profile(model, inputs=(inputs, theta))
+    # flops, params = clever_format([flops, params])
+    # print('# Model Params: {} FLOPs: {}'.format(params, flops))
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    
+
     c = len(memory_data.classes)
 
     # training loop
@@ -170,7 +245,6 @@ if __name__ == '__main__':
     if not os.path.exists('results'):
         os.mkdir('results')
     
-
     best_acc = 0.0
     for epoch in range(1, epochs + 1):
         train_loss = train(model, train_loader, optimizer)
@@ -190,3 +264,5 @@ if __name__ == '__main__':
         if test_acc_1 > best_acc:
             best_acc = test_acc_1
             torch.save(model.state_dict(), 'results/{}_model.pth'.format(save_name_pre))
+
+torch.autograd.grad(outputs=out[:, i], inputs=theta, grad_outputs=torch.ones(len(rot_mat)), retain_graph=True, create_graph=True)[0]

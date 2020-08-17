@@ -3,6 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models.resnet import resnet50
 
+import torchvision
+import torchvision.transforms.functional as FT
+import numpy as np
 
 class OriginalModel(nn.Module):
     def __init__(self, feature_dim=128):
@@ -27,6 +30,29 @@ class OriginalModel(nn.Module):
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)
         return F.normalize(feature, dim=-1), F.normalize(out, dim=-1)
+
+# differentiable image augmentation module
+torch_pi = torch.acos(torch.zeros(1)).item() * 2
+
+class AugmentationModule(nn.Module):
+
+    def __init__(self, batch_size=512):
+        super().__init__()
+        # theta = 2 * torch_pi * torch.rand(1) - torch_pi
+        # zero = torch.zeros(1)
+
+        # rot_mat = torch.stack([
+        #         torch.stack([torch.cos(theta), torch.sin(theta), zero]), 
+        #         torch.stack([-torch.sin(theta), torch.cos(theta), zero])
+        #     ])
+
+        # self.rot_mat = nn.Parameter(rot_mat.repeat(batch_size, 1, 1))
+
+    # theta should be in degrees between -180 to 180
+    def forward(self, x, rot_mat):
+        grid = F.affine_grid(rot_mat, x.size(), align_corners=False)
+        x = F.grid_sample(x, grid, align_corners=False)
+        return x
 
 class ProposedModel(nn.Module):
     def __init__(self, feature_dim=128, norm_type='layer', output_norm='layer'):
@@ -59,7 +85,10 @@ class ProposedModel(nn.Module):
         # projection head
         self.g = nn.Sequential(*proj_layers)
 
-    def forward(self, x):
+        self.augment = AugmentationModule()
+
+    def forward(self, x, rot_mat):
+        x = self.augment(x, rot_mat)
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)
@@ -68,3 +97,5 @@ class ProposedModel(nn.Module):
             
         # else we are getting normalized output from projection head
         return F.normalize(feature, dim=-1), out
+
+

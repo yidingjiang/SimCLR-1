@@ -34,7 +34,9 @@ class CIFAR10Data(CIFAR10):
         if self.target_transform is not None:
             target = self.target_transform(target)
 
-        return pos, target
+        if self.transform is not None:
+            return pos, target
+        return img, target
 
 train_transform = transforms.Compose([
     transforms.RandomResizedCrop(32),
@@ -44,6 +46,12 @@ train_transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])])
 
+train_normalize_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
+])
+
 test_transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])])
+    transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
+])
