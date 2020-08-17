@@ -87,9 +87,9 @@ def train(net, data_loader, train_optimizer):
             print(grad)
             grad.append(
                 torch.autograd.grad(
-                    outputs=out[:, i].view(args.batch_size, 1),
+                    outputs=out[:, i],
                     inputs=theta,
-                    grad_outputs=torch.ones((args.batch_size, 1)),
+                    grad_outputs=torch.ones_like(out[:, i]),
                     retain_graph=True, 
                     create_graph=True
                 )[0]
@@ -100,7 +100,7 @@ def train(net, data_loader, train_optimizer):
 
 
         grad_params_2 = torch.autograd.grad(outputs=out, inputs=theta, 
-                                            grad_outputs=torch.ones_like(out).cuda() is cuda_available else torch.ones_like(out), 
+                                            grad_outputs=torch.ones_like(out).cuda() if cuda_available else torch.ones_like(out), 
                                             create_graph=True)
 
         grad_params_2 = grad_params_2.view(args.batch_size, -1)
