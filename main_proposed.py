@@ -86,20 +86,24 @@ def train(net, data_loader, train_optimizer):
         
         # grad_params = torch.autograd.grad(outputs=out, inputs=net.augment.rot_mat, grad_outputs=torch.ones_like(out), create_graph=True)
         # rot_mat_grad = torch.autograd.grad(outputs=net.augment.rot_mat, inputs=net.augment.theta, grad_outputs=torch.ones_like(net.augment.rot_mat), create_graph=True)
-        grad = []
-        for i in range(out.size(1)):
-            print(i)
-            print(grad)
-            grad.append(
-                torch.autograd.grad(
-                    outputs=out[:, i],
-                    inputs=theta,
-                    grad_outputs=torch.ones_like(out[:, i]),
-                    retain_graph=True, 
-                    create_graph=True
-                )[0]
-            )
+        grad_norm = 0
+        for i in range(out.size(0)):
+            grad = []
+            for j in range(out.size(1)):
+                grad.append(
+                    torch.autograd.grad(
+                        outputs=out[i, j],
+                        inputs=theta,
+                        grad_outputs=torch.ones_like(out[i, j]),
+                        retain_graph=True, 
+                        create_graph=True
+                    )[0]
+                )
+            import pdb; pdb.set_trace()
+            grad = torch.cat(grad)
+            grad_norm += (torch.sum(grad ** 2) + 1e-12)
         
+
         import pdb; pdb.set_trace()
         grad_params = torch.stack(grad) # [B, 128]
 
@@ -199,7 +203,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train SimCLR')
     parser.add_argument('--feature_dim', default=128, type=int, help='Feature dim for latent vector')
     parser.add_argument('--k', default=200, type=int, help='Top k most similar images used to predict the label')
-    parser.add_argument('--batch_size', default=64, type=int, help='Number of images in each mini-batch')
+    parser.add_argument('--batch_size', default=32, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--epochs', default=150, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--model_type', default='proposed', type=str, help='Type of model to train - original SimCLR (original) or Proposed (proposed)')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')
