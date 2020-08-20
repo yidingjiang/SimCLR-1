@@ -67,7 +67,7 @@ def compute_jacobian_norm(inputs, output):
         output.backward(grad_output, retain_graph=True)
         jacobian_norm += torch.norm(inputs.grad.data)**2
 
-    return torch.sqrt(jacobian_norm)
+    return torch.sqrt(jacobian_norm/inputs.shape[0])
 
 def get_affine_transform_tensors(batch_size):
     torch_pi = torch.acos(torch.zeros(1)).item() * 2
@@ -93,8 +93,9 @@ def get_affine_transform_tensors(batch_size):
         rot_mat = rot_mat.cuda()
     return theta, rot_mat
 
-
+# Checked; works correctly
 def get_batch_affine_transform_tensors(batch_size):
+    # Rotate image by a random angle
     torch_pi = torch.acos(torch.zeros(1, requires_grad=True)).item() * 2
     theta = 2 * torch_pi * torch.rand((batch_size, 1), requires_grad=True) - torch_pi #torch.rand((batch_size, 1), requires_grad=True)
 
@@ -114,17 +115,40 @@ def get_batch_affine_transform_tensors(batch_size):
     mask4 = torch.zeros_like(rot_mat, dtype=torch.bool)
     mask4[:, 1, 1] = True
 
+    # add some translation too
+    # small horizontal translation
+    tx = torch.rand((batch_size, 1), requires_grad=True)
+    mask5 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask5[:, 0, 2] = True
+
+    ty = torch.rand((batch_size, 1), requires_grad=True)
+    mask6 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask6[:, 0, 2] = True
+
     if cuda_available:
         mask1 = mask1.cuda()
         mask2 = mask2.cuda()
         mask3 = mask3.cuda()
         mask4 = mask4.cuda()
+        mask5 = mask5.cuda()
+        mask6 = mask6.cuda()
 
     rot_mat = rot_mat.masked_scatter(mask1, theta.cos())
     rot_mat = rot_mat.masked_scatter(mask2, -theta.sin())
     rot_mat = rot_mat.masked_scatter(mask3, theta.sin())
     rot_mat = rot_mat.masked_scatter(mask4, theta.cos())
-    return theta, rot_mat
+    rot_mat = rot_mat.masked_scatter(mask5, tx)
+    rot_mat = rot_mat.masked_scatter(mask6, ty)
+    return theta, tx, ty, rot_mat
+
+# get color jitter tensors
+def get_batch_color_jitter_tensors(batch_size):
+    # Generate a value between (0, 0.5)
+    constant = torch.tensor([0.5], requires_grad=True)
+    brightness = torch.rand((batch_size, 1, 1, 1), requires_grad=True)
+    if cuda_available:
+        brightness = brightness.cuda()
+    return brightness
 
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
@@ -138,10 +162,16 @@ def train(net, data_loader, train_optimizer):
         if cuda_available:
             pos = pos.cuda(non_blocking=True)
 
-        theta, rot_mat = get_batch_affine_transform_tensors(args.batch_size)
+        theta, tx, ty, rot_mat = get_batch_affine_transform_tensors(args.batch_size)
+        brightness = get_batch_color_jitter_tensors(args.batch_size)
+
         theta.retain_grad()
+        tx.retain_grad()
+        ty.retain_grad()
+        brightness.retain_grad()
+
         # [B, D]
-        feature, out = net(pos, rot_mat)
+        feature, out = net(pos, rot_mat, brightness)
 
         # [B, B]
         sim_matrix = torch.mm(out, out.t().contiguous())
@@ -149,9 +179,13 @@ def train(net, data_loader, train_optimizer):
 
         sim_matrix = sim_matrix.masked_select(mask).view(batch_size, -1)
 
+        # compute derivative wrt theta, tx and ty
         loss = sim_matrix.sum(dim=-1).mean()
-        jacobian_norm = compute_jacobian_norm(theta, out)
-        loss += jacobian_norm
+        loss += compute_jacobian_norm(theta, out)
+        loss += compute_jacobian_norm(tx, out)
+        loss += compute_jacobian_norm(ty, out)
+        # compute derivative wrt brightness
+        loss += compute_jacobian_norm(brightness, out)
 
         train_optimizer.zero_grad()
         loss.backward()
@@ -233,11 +267,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train SimCLR')
     parser.add_argument('--feature_dim', default=128, type=int, help='Feature dim for latent vector')
     parser.add_argument('--k', default=200, type=int, help='Top k most similar images used to predict the label')
-    parser.add_argument('--batch_size', default=2, type=int, help='Number of images in each mini-batch')
+    parser.add_argument('--batch_size', default=128, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--epochs', default=150, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--model_type', default='proposed', type=str, help='Type of model to train - original SimCLR (original) or Proposed (proposed)')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')
-    parser.add_argument('--use_wandb', default=False, type=bool, help='Log results to wandb')
+    parser.add_argument('--use_wandb', default=True, type=bool, help='Log results to wandb')
     parser.add_argument('--norm_type', default='batch', type=str, help="Type of norm to use in between FC layers of the projection head")
     parser.add_argument('--output_norm', default=None, type=str, help="Norm to use at the output")
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
