@@ -132,7 +132,9 @@ def get_batch_affine_transform_tensors(batch_size):
         mask4 = mask4.cuda()
         mask5 = mask5.cuda()
         mask6 = mask6.cuda()
-
+        tx = tx.cuda()
+        ty = ty.cuda()
+        
     rot_mat = rot_mat.masked_scatter(mask1, theta.cos())
     rot_mat = rot_mat.masked_scatter(mask2, -theta.sin())
     rot_mat = rot_mat.masked_scatter(mask3, theta.sin())
