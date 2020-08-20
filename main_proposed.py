@@ -134,7 +134,7 @@ def get_batch_affine_transform_tensors(batch_size):
         mask6 = mask6.cuda()
         tx = tx.cuda()
         ty = ty.cuda()
-        
+
     rot_mat = rot_mat.masked_scatter(mask1, theta.cos())
     rot_mat = rot_mat.masked_scatter(mask2, -theta.sin())
     rot_mat = rot_mat.masked_scatter(mask3, theta.sin())
@@ -147,7 +147,7 @@ def get_batch_affine_transform_tensors(batch_size):
 def get_batch_color_jitter_tensors(batch_size):
     # Generate a value between (0, 0.5)
     constant = torch.tensor([0.5], requires_grad=True)
-    brightness = torch.rand((batch_size, 1, 1, 1), requires_grad=True)
+    brightness = constant * torch.rand((batch_size, 1, 1, 1), requires_grad=True)
     if cuda_available:
         brightness = brightness.cuda()
     return brightness
@@ -221,7 +221,7 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
             if cuda_available:
                 data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
 
-            feature, out = net(data)
+            feature, out = net(data, mode='test')
 
             total_num += data.size(0)
             # compute cos similarity between each feature vector and feature bank ---> [B, N]
@@ -310,11 +310,11 @@ if __name__ == '__main__':
     # model setup and optimizer config
     model = ProposedModel(feature_dim=feature_dim, norm_type=args.norm_type, output_norm=args.output_norm)
     inputs = torch.randn(1, 3, 32, 32)
-    theta = torch.Tensor(1)
 
     if cuda_available:
         model = model.cuda()
         inputs = inputs.cuda()
+
     # flops, params = profile(model, inputs=(inputs, theta))
     # flops, params = clever_format([flops, params])
     # print('# Model Params: {} FLOPs: {}'.format(params, flops))

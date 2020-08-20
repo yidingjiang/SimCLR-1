@@ -7,8 +7,6 @@ import torchvision
 import torchvision.transforms.functional as FT
 import numpy as np
 
-import kornia
-
 class OriginalModel(nn.Module):
     def __init__(self, feature_dim=128):
         super(OriginalModel, self).__init__()
@@ -44,7 +42,7 @@ class AugmentationModule(nn.Module):
         self.sigma = torch.Tensor([0.2023, 0.1994, 0.2010])
 
     # Note that I should only normalize in test mode; no other type of augmentation should be performed
-    def forward(self, x, rot_mat, brightness, visualize=False):
+    def forward(self, x, rot_mat, brightness, mode='train', visualize=False):
         # import pdb; pdb.set_trace()
         B = x.shape[0]
 
@@ -53,20 +51,21 @@ class AugmentationModule(nn.Module):
             pil_img = FT.to_pil_image(x[0])
             pil_img.show()
 
-        # Rotation and translation
-        grid = F.affine_grid(rot_mat, x.size(), align_corners=False)
-        x = F.grid_sample(x, grid, align_corners=False)
-        if visualize:
-            pil_img_rotated = FT.to_pil_image(x[0])
-            pil_img_rotated.show()
+        if mode == 'train':
+            # Rotation and translation
+            grid = F.affine_grid(rot_mat, x.size(), align_corners=False)
+            x = F.grid_sample(x, grid, align_corners=False)
+            if visualize:
+                pil_img_rotated = FT.to_pil_image(x[0])
+                pil_img_rotated.show()
 
-        # Color jitter
-        x = x + brightness
-        x = torch.clamp(x, 0.0, 1.0)
+            # Color jitter
+            x = x + brightness
+            x = torch.clamp(x, 0.0, 1.0)
 
-        if visualize:
-            pil_img_bright = FT.to_pil_image(x[0])
-            pil_img_bright.show()
+            if visualize:
+                pil_img_bright = FT.to_pil_image(x[0])
+                pil_img_bright.show()
 
         #  Normalize - implementing this because inbuilt normalize doesn't seem to support batch normalization
         mean = self.mu.repeat(B, 1, 1, 1).view(B, 3, 1, 1)
@@ -136,8 +135,10 @@ class ProposedModel(nn.Module):
 
         self.augment = AugmentationModule()
 
-    def forward(self, x, rot_mat, brightness):
-        x = self.augment(x, rot_mat, brightness)
+    def forward(self, x, rot_mat=None, brightness=None, mode='train'):
+        if mode == 'train':
+            assert rot_mat is not None and brightness is not None
+        x = self.augment(x, rot_mat, brightness, mode='train')
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)
