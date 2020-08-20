@@ -71,6 +71,9 @@ class AugmentationModule(nn.Module):
         #  Normalize - implementing this because inbuilt normalize doesn't seem to support batch normalization
         mean = self.mu.repeat(B, 1, 1, 1).view(B, 3, 1, 1)
         std = self.sigma.repeat(B, 1, 1 ,1).view(B, 3, 1, 1)
+        if torch.cuda.is_available():
+            mean = mean.cuda()
+            std = std.cuda()
         x = (x - mean)/std
         
         # Used to check if normalization above gives same value as inbuilt normalization
