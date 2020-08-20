@@ -7,6 +7,7 @@ import torch.optim as optim
 from thop import profile, clever_format
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from torch.autograd.gradcheck import zero_gradients
 
 import utils
 from model import ProposedModel
@@ -17,13 +18,63 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 
+def compute_jacobian(inputs, output):
+    """
+    :param inputs: Batch X Size (e.g. Depth X Width X Height)
+    :param output: Batch X Classes
+    :return: jacobian: Batch X Classes X Size
+    """
+    assert inputs.requires_grad
+
+    num_classes = output.size()[1]
+
+    jacobian = torch.zeros(num_classes, *inputs.size())
+    grad_output = torch.zeros(*output.size())
+    if inputs.is_cuda:
+        grad_output = grad_output.cuda()
+        jacobian = jacobian.cuda()
+
+    for i in range(num_classes):
+        zero_gradients(inputs)
+        grad_output.zero_()
+        grad_output[:, i] = 1
+        output.backward(grad_output, retain_graph=True)
+        jacobian[i] = inputs.grad.data
+
+    return torch.transpose(jacobian, dim0=0, dim1=1)
+
+def compute_jacobian_norm(inputs, output):
+    """
+    :param inputs: Batch X Size (e.g. Depth X Width X Height)
+    :param output: Batch X Classes
+    :return: jacobian: Batch X Classes X Size
+    """
+    assert inputs.requires_grad
+
+    num_classes = output.size()[1]
+    
+    jacobian_norm = 0.0
+
+    grad_output = torch.zeros(*output.size())
+    if cuda_available:
+        inputs = inputs.cuda()
+        grad_output = grad_output.cuda()
+
+    for i in range(num_classes):
+        zero_gradients(inputs)
+        grad_output.zero_()
+        grad_output[:, i] = 1
+        output.backward(grad_output, retain_graph=True)
+        jacobian_norm += torch.norm(inputs.grad.data)**2
+
+    return torch.sqrt(jacobian_norm)
+
 def get_affine_transform_tensors(batch_size):
     torch_pi = torch.acos(torch.zeros(1)).item() * 2
     theta = 2 * torch_pi * torch.rand(1, requires_grad=True) - torch_pi
     if cuda_available:
         theta = theta.cuda()
 
-    #theta = torch.Tensor([np.random.uniform(low=-np.pi, high=np.pi)])
     # [2,3]
     if cuda_available:
         rot_mat = torch.stack(( torch.cat((torch.cos(theta).cuda(), torch.sin(theta).cuda(), torch.zeros(1).cuda())), 
@@ -42,20 +93,38 @@ def get_affine_transform_tensors(batch_size):
         rot_mat = rot_mat.cuda()
     return theta, rot_mat
 
-# def get_affine_transform_tensors():
-#     theta = torch.tensor(np.random.uniform(low=-np.pi, high=np.pi))
-#     rot_mat = torch.tensor([[torch.cos(theta), torch.sin(theta)], [-torch.sin(theta), torch.cos(theta)]], dtype=torch.float)
-#     rot_mat = rot_mat.repeat(batch_size, 1, 1)
 
-#     theta = 2 * torch_pi * torch.rand(1) - torch_pi
-#     zero = torch.zeros(1)
+def get_batch_affine_transform_tensors(batch_size):
+    torch_pi = torch.acos(torch.zeros(1, requires_grad=True)).item() * 2
+    theta = 2 * torch_pi * torch.rand((batch_size, 1), requires_grad=True) - torch_pi #torch.rand((batch_size, 1), requires_grad=True)
 
-#     rot_mat = torch.stack([
-#             torch.stack([torch.cos(theta), torch.sin(theta), zero]), 
-#             torch.stack([-torch.sin(theta), torch.cos(theta), zero])
-#         ], dtype=torch.float)
+    if cuda_available:
+        theta = theta.cuda()
 
-#     self.rot_mat = nn.Parameter(rot_mat.repeat(batch_size, 1, 1))
+    rot_mat = torch.zeros((batch_size, 2, 3), requires_grad=True)
+    if cuda_available:
+        rot_mat = rot_mat.cuda()
+
+    mask1 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask1[:, 0, 0] = True
+    mask2 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask2[:, 0, 1] = True
+    mask3 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask3[:, 1, 0] = True
+    mask4 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask4[:, 1, 1] = True
+
+    if cuda_available:
+        mask1 = mask1.cuda()
+        mask2 = mask2.cuda()
+        mask3 = mask3.cuda()
+        mask4 = mask4.cuda()
+
+    rot_mat = rot_mat.masked_scatter(mask1, theta.cos())
+    rot_mat = rot_mat.masked_scatter(mask2, -theta.sin())
+    rot_mat = rot_mat.masked_scatter(mask3, theta.sin())
+    rot_mat = rot_mat.masked_scatter(mask4, theta.cos())
+    return theta, rot_mat
 
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
@@ -69,7 +138,8 @@ def train(net, data_loader, train_optimizer):
         if cuda_available:
             pos = pos.cuda(non_blocking=True)
 
-        theta, rot_mat = get_affine_transform_tensors(args.batch_size)
+        theta, rot_mat = get_batch_affine_transform_tensors(args.batch_size)
+        theta.retain_grad()
         # [B, D]
         feature, out = net(pos, rot_mat)
 
@@ -80,49 +150,11 @@ def train(net, data_loader, train_optimizer):
         sim_matrix = sim_matrix.masked_select(mask).view(batch_size, -1)
 
         loss = sim_matrix.sum(dim=-1).mean()
-        
-        # import pdb; pdb.set_trace()
-        #rot_mat_grad = torch.autograd.grad(outputs=rot_mat, inputs=theta, grad_outputs=torch.ones_like(rot_mat), create_graph=True)
-        
-        # grad_params = torch.autograd.grad(outputs=out, inputs=net.augment.rot_mat, grad_outputs=torch.ones_like(out), create_graph=True)
-        # rot_mat_grad = torch.autograd.grad(outputs=net.augment.rot_mat, inputs=net.augment.theta, grad_outputs=torch.ones_like(net.augment.rot_mat), create_graph=True)
-        grad_norm = 0
-        for i in range(out.size(0)):
-            grad = []
-            for j in range(out.size(1)):
-                grad.append(
-                    torch.autograd.grad(
-                        outputs=out[i, j],
-                        inputs=theta,
-                        grad_outputs=torch.ones_like(out[i, j]),
-                        retain_graph=True, 
-                        create_graph=True
-                    )[0]
-                )
-            grad = torch.cat(grad)
-            grad_norm += (torch.sum(grad ** 2) + 1e-12)
-        
-        grad_norm /= args.batch_size
-
-        # import pdb; pdb.set_trace()
-
-        # grad_params_2 = torch.autograd.grad(outputs=out, inputs=theta, 
-        #                                     grad_outputs=torch.ones_like(out).cuda() if cuda_available else torch.ones_like(out), 
-        #                                     create_graph=True)
-
-        # grad_params_2 = grad_params_2.view(args.batch_size, -1)
-        # grad_norm2 = torch.sqrt(torch.sum(grad_params_2 ** 2, dim=1) + 1e-12)
-
-        # grad_norm = 0
-        # # This is of shape # [512, 2, 3]
-        # for grad in grad_params:          
-        #     grad_norm += torch.mean(torch.norm(grad, dim=(1, 2)))
-        
-        loss += grad_norm
+        jacobian_norm = compute_jacobian_norm(theta, out)
+        loss += jacobian_norm
 
         train_optimizer.zero_grad()
         loss.backward()
-
 
         train_optimizer.step()
 
@@ -201,7 +233,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train SimCLR')
     parser.add_argument('--feature_dim', default=128, type=int, help='Feature dim for latent vector')
     parser.add_argument('--k', default=200, type=int, help='Top k most similar images used to predict the label')
-    parser.add_argument('--batch_size', default=32, type=int, help='Number of images in each mini-batch')
+    parser.add_argument('--batch_size', default=2, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--epochs', default=150, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--model_type', default='proposed', type=str, help='Type of model to train - original SimCLR (original) or Proposed (proposed)')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')
