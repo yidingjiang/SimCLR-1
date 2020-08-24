@@ -123,13 +123,14 @@ if __name__ == '__main__':
     parser.add_argument('--feature_dim', default=128, type=int, help='Feature dim for latent vector')
     parser.add_argument('--temperature', default=0.5, type=float, help='Temperature used in softmax')
     parser.add_argument('--k', default=200, type=int, help='Top k most similar images used to predict the label')
-    parser.add_argument('--batch_size', default=512, type=int, help='Number of images in each mini-batch')
+    parser.add_argument('--batch_size', default=128, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--epochs', default=500, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--model_type', default='original', type=str, help='Type of model to train - original SimCLR or Proposed')
     parser.add_argument('--num_workers', default=16, type=int, help='number of workers to load data')
-    parser.add_argument('--use_wandb', default=True, type=bool, help='Log results to wandb')
+    parser.add_argument('--use_wandb', default=False, type=bool, help='Log results to wandb')
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='learning rate')
+    parser.add_argument('--resnet', default='resnet18', type=str, help='Type of resnet: 1. resnet18, resnet34, resnet50')
 
     # args parse
     args = parser.parse_args()
@@ -141,29 +142,19 @@ if __name__ == '__main__':
     cuda_available = torch.cuda.is_available()
 
     print("Preparing data...")
-    if args.model_type == 'proposed':
-        # data prepare
-        train_data = utils.CIFAR10Data(root='data', train=True, transform=utils.train_transform, download=True)
-        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True,
-                                drop_last=True)
-        memory_data = utils.CIFAR10Data(root='data', train=True, transform=utils.test_transform, download=True)
-        memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
-        test_data = utils.CIFAR10Data(root='data', train=False, transform=utils.test_transform, download=True)
-        test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
-    elif args.model_type == 'original':
-        # data prepare
-        train_data = utils.CIFAR10Pair(root='data', train=True, transform=utils.train_transform, download=True)
-        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True,
-                                drop_last=True)
-        memory_data = utils.CIFAR10Pair(root='data', train=True, transform=utils.test_transform, download=True)
-        memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
-        test_data = utils.CIFAR10Pair(root='data', train=False, transform=utils.test_transform, download=True)
-        test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
+    # data prepare
+    train_data = utils.CIFAR10Pair(root='data', train=True, transform=utils.train_transform, download=True)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True,
+                            drop_last=True)
+    memory_data = utils.CIFAR10Pair(root='data', train=True, transform=utils.test_orig_transform, download=True)
+    memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
+    test_data = utils.CIFAR10Pair(root='data', train=False, transform=utils.test_orig_transform, download=True)
+    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
     print("Data prepared. Now initializing out Model...")
     # model setup and optimizer config
-    model = OriginalModel(feature_dim)
+    model = OriginalModel(feature_dim, model=args.resnet)
     inputs = torch.randn(1, 3, 32, 32)
     if cuda_available:
         model = model.cuda()
