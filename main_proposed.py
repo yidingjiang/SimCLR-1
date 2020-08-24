@@ -176,6 +176,27 @@ def get_batch_color_jitter_tensors(batch_size):
 
     return brightness, brightness_delta
 
+def simclr_based_loss(out):
+    sim_matrix = torch.mm(out, out.t().contiguous())
+    mask = (torch.ones_like(sim_matrix) - torch.eye(batch_size, device=sim_matrix.device)).bool()
+    sim_matrix = sim_matrix.masked_select(mask).view(batch_size, -1)
+    loss = sim_matrix.sum(dim=-1).mean()
+    return loss
+
+def corrected_loss(out, target):
+    # Find dot product of first example with the rest
+    sim_vals = torch.mm(out[0].view(1, -1), out.t())
+
+    # I will consider class of the first example as positive
+    # pos_mask = (target == target[0])
+    # pos_vals = sim_vals.masked_select(pos_mask)
+    
+    neg_mask = (target != target[0])
+    neg_vals = sim_vals.masked_select(neg_mask)
+
+    loss = torch.mean(neg_vals)
+    return loss
+
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
     # for name, param in  net.named_parameters():
@@ -198,21 +219,16 @@ def train(net, data_loader, train_optimizer):
 
         # [B, D]
         feature, out = net(pos, rot_mat, brightness)
+        loss = corrected_loss(out, target)
 
-        # [B, B]
-        sim_matrix = torch.mm(out, out.t().contiguous())
-        mask = (torch.ones_like(sim_matrix) - torch.eye(batch_size, device=sim_matrix.device)).bool()
-
-        sim_matrix = sim_matrix.masked_select(mask).view(batch_size, -1)
-
-        # compute derivative wrt theta, tx and ty
-        loss = sim_matrix.sum(dim=-1).mean()
+        # compute exact derivative wrt theta, tx and ty and jitter
         # loss += compute_jacobian_norm(theta, out)
         # loss += compute_jacobian_norm(tx, out)
         # loss += compute_jacobian_norm(ty, out)
         # compute derivative wrt brightness
         # loss += compute_jacobian_norm(brightness, out)
-
+        
+        # compute approximate derivative wrt theta, tx and ty and jitter
         _, out_dtheta = net(pos, delta_dict['r_dtheta'], brightness)
         _, out_dtx = net(pos, delta_dict['r_dtx'], brightness)
         _, out_dty = net(pos, delta_dict['r_dty'], brightness)
