@@ -69,41 +69,35 @@ def compute_jacobian_norm(inputs, output):
 
     return torch.sqrt(jacobian_norm/inputs.shape[0])
 
-def get_affine_transform_tensors(batch_size):
-    torch_pi = torch.acos(torch.zeros(1)).item() * 2
-    theta = 2 * torch_pi * torch.rand(1, requires_grad=True) - torch_pi
-    if cuda_available:
-        theta = theta.cuda()
+# def get_affine_transform_tensors(batch_size):
+#     torch_pi = torch.acos(torch.zeros(1)).item() * 2
+#     theta = 2 * torch_pi * torch.rand(1, requires_grad=True) - torch_pi
 
-    # [2,3]
-    if cuda_available:
-        rot_mat = torch.stack(( torch.cat((torch.cos(theta).cuda(), torch.sin(theta).cuda(), torch.zeros(1).cuda())), 
-                                torch.cat((-torch.sin(theta).cuda(), torch.cos(theta).cuda(), torch.zeros(1).cuda()))
-                                ))
-    else:
-        rot_mat = torch.stack(( torch.cat((torch.cos(theta), torch.sin(theta), torch.zeros(1))), 
-                                torch.cat((-torch.sin(theta), torch.cos(theta), torch.zeros(1)))
-                                ))
-    # replicate it [B, 2, 3]
-    # grad = torch.autograd.grad( outputs=rot_mat, inputs=theta, 
-    #                             grad_outputs=torch.ones_like(rot_mat).cuda() if cuda_available else torch.ones_like(rot_mat) , 
-    #                             create_graph=True)
-    rot_mat = rot_mat.repeat(batch_size, 1, 1)
-    if cuda_available:
-        rot_mat = rot_mat.cuda()
-    return theta, rot_mat
+#     if cuda_available:
+#         theta = theta.cuda()
 
-# Checked; works correctly
-def get_batch_affine_transform_tensors(batch_size):
-    # Rotate image by a random angle
-    torch_pi = torch.acos(torch.zeros(1, requires_grad=True)).item() * 2
-    theta = 2 * torch_pi * torch.rand((batch_size, 1), requires_grad=True) - torch_pi #torch.rand((batch_size, 1), requires_grad=True)
+#     # [2,3]
+#     if cuda_available:
+#         rot_mat = torch.stack(( torch.cat((torch.cos(theta).cuda(), torch.sin(theta).cuda(), torch.zeros(1).cuda())), 
+#                                 torch.cat((-torch.sin(theta).cuda(), torch.cos(theta).cuda(), torch.zeros(1).cuda()))
+#                                 ))
+#     else:
+#         rot_mat = torch.stack(( torch.cat((torch.cos(theta), torch.sin(theta), torch.zeros(1))), 
+#                                 torch.cat((-torch.sin(theta), torch.cos(theta), torch.zeros(1)))
+#                                 ))
+#     # replicate it [B, 2, 3]
+#     # grad = torch.autograd.grad( outputs=rot_mat, inputs=theta, 
+#     #                             grad_outputs=torch.ones_like(rot_mat).cuda() if cuda_available else torch.ones_like(rot_mat) , 
+#     #                             create_graph=True)
+#     rot_mat = rot_mat.repeat(batch_size, 1, 1)
 
-    if cuda_available:
-        theta = theta.cuda()
+#     if cuda_available:
+#         rot_mat = rot_mat.cuda()
+#     return theta, rot_mat
 
+def get_batch_rot_mat(theta, tx, ty):
     rot_mat = torch.zeros((batch_size, 2, 3), requires_grad=True)
-    if cuda_available:
+    if torch.cuda.is_available():
         rot_mat = rot_mat.cuda()
 
     mask1 = torch.zeros_like(rot_mat, dtype=torch.bool)
@@ -117,11 +111,9 @@ def get_batch_affine_transform_tensors(batch_size):
 
     # add some translation too
     # small horizontal translation
-    tx = torch.rand((batch_size, 1), requires_grad=True)
     mask5 = torch.zeros_like(rot_mat, dtype=torch.bool)
     mask5[:, 0, 2] = True
 
-    ty = torch.rand((batch_size, 1), requires_grad=True)
     mask6 = torch.zeros_like(rot_mat, dtype=torch.bool)
     mask6[:, 0, 2] = True
 
@@ -132,8 +124,6 @@ def get_batch_affine_transform_tensors(batch_size):
         mask4 = mask4.cuda()
         mask5 = mask5.cuda()
         mask6 = mask6.cuda()
-        tx = tx.cuda()
-        ty = ty.cuda()
 
     rot_mat = rot_mat.masked_scatter(mask1, theta.cos())
     rot_mat = rot_mat.masked_scatter(mask2, -theta.sin())
@@ -141,16 +131,52 @@ def get_batch_affine_transform_tensors(batch_size):
     rot_mat = rot_mat.masked_scatter(mask4, theta.cos())
     rot_mat = rot_mat.masked_scatter(mask5, tx)
     rot_mat = rot_mat.masked_scatter(mask6, ty)
-    return theta, tx, ty, rot_mat
+    return rot_mat
+
+# Checked; works correctly
+def get_batch_affine_transform_tensors(batch_size):
+    # Rotate image by a random angle
+    torch_pi = torch.acos(torch.zeros(1, requires_grad=True)).item() * 2
+    theta = 2 * torch_pi * torch.rand((batch_size, 1), requires_grad=True) - torch_pi #torch.rand((batch_size, 1), requires_grad=True)
+    
+    tx = torch.rand((batch_size, 1), requires_grad=True)
+    ty = torch.rand((batch_size, 1), requires_grad=True)
+
+    theta_delta = theta + torch.rand_like(theta) * 1e-3
+
+    tx_delta = tx + torch.rand_like(tx) * 1e-3
+    ty_delta = ty + torch.rand_like(ty) * 1e-3
+
+    if cuda_available:
+        theta = theta.cuda()
+        eps = eps.cuda()
+        delta = delta.cuda()
+        tx = tx.cuda()
+        ty = ty.cuda()
+        theta_delta = theta_delta.cuda()
+        tx_delta = tx_delta.cuda()
+        ty_delta = ty_delta.cuda()
+
+    rot_mat = get_batch_rot_mat(theta, tx, ty)
+    rot_mat_dtheta = get_batch_rot_mat(theta_delta, tx, ty)
+    rot_mat_dtx = get_batch_rot_mat(theta, tx_delta, ty)
+    rot_mat_dty = get_batch_rot_mat(theta, tx, ty_delta)
+
+    return theta, tx, ty, rot_mat, {'r_dtheta': rot_mat_dtheta, 'r_dtx': rot_mat_dtx, 'r_dty': rot_mat_dty, 
+                                    'dtheta': theta_delta, 'dtx': tx_delta, 'dty': ty_delta}
 
 # get color jitter tensors
 def get_batch_color_jitter_tensors(batch_size):
     # Generate a value between (0, 0.5)
     constant = torch.tensor([0.5], requires_grad=True)
     brightness = constant * torch.rand((batch_size, 1, 1, 1), requires_grad=True)
+    brightness_delta = brightness + torch.rand_like(brightness) * 1e-3
+
     if cuda_available:
         brightness = brightness.cuda()
-    return brightness
+        brightness_delta = brightness_delta.cuda()
+
+    return brightness, brightness_delta
 
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
@@ -164,13 +190,13 @@ def train(net, data_loader, train_optimizer):
         if cuda_available:
             pos = pos.cuda(non_blocking=True)
 
-        theta, tx, ty, rot_mat = get_batch_affine_transform_tensors(args.batch_size)
-        brightness = get_batch_color_jitter_tensors(args.batch_size)
+        theta, tx, ty, rot_mat, delta_dict = get_batch_affine_transform_tensors(args.batch_size)
+        brightness, brightness_delta = get_batch_color_jitter_tensors(args.batch_size)
 
-        theta.retain_grad()
-        tx.retain_grad()
-        ty.retain_grad()
-        brightness.retain_grad()
+        # theta.retain_grad()
+        # tx.retain_grad()
+        # ty.retain_grad()
+        # brightness.retain_grad()
 
         # [B, D]
         feature, out = net(pos, rot_mat, brightness)
@@ -183,11 +209,23 @@ def train(net, data_loader, train_optimizer):
 
         # compute derivative wrt theta, tx and ty
         loss = sim_matrix.sum(dim=-1).mean()
-        loss += compute_jacobian_norm(theta, out)
-        loss += compute_jacobian_norm(tx, out)
-        loss += compute_jacobian_norm(ty, out)
+        # loss += compute_jacobian_norm(theta, out)
+        # loss += compute_jacobian_norm(tx, out)
+        # loss += compute_jacobian_norm(ty, out)
         # compute derivative wrt brightness
-        loss += compute_jacobian_norm(brightness, out)
+        # loss += compute_jacobian_norm(brightness, out)
+
+        _, out_dtheta = net(pos, delta_dict['r_dtheta'], brightness)
+        _, out_dtx = net(pos, delta_dict['r_dtx'], brightness)
+        _, out_dty = net(pos, delta_dict['r_dty'], brightness)
+        _, out_djitter = net(pos, rot_mat, brightness_delta)
+
+        j_dtheta = torch.norm((out_dtheta - out)/ delta_dict['dtheta'])/args.batch_size
+        j_dtx = torch.norm((out_dtx - out)/ delta_dict['dtx'])/args.batch_size
+        j_dty = torch.norm((out_dty - out)/ delta_dict['dty'])/args.batch_size
+        j_djitter = torch.norm((out_djitter)/ brightness_delta)/args.batch_size
+        
+        loss += j_dtheta + j_dtx + j_dty + j_djitter
 
         train_optimizer.zero_grad()
         loss.backward()
@@ -273,7 +311,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', default=150, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--model_type', default='proposed', type=str, help='Type of model to train - original SimCLR (original) or Proposed (proposed)')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')
-    parser.add_argument('--use_wandb', default=True, type=bool, help='Log results to wandb')
+    parser.add_argument('--use_wandb', default=False, type=bool, help='Log results to wandb')
     parser.add_argument('--norm_type', default='batch', type=str, help="Type of norm to use in between FC layers of the projection head")
     parser.add_argument('--output_norm', default=None, type=str, help="Norm to use at the output")
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
