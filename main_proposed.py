@@ -192,6 +192,8 @@ def corrected_loss(out, target):
     # pos_vals = sim_vals.masked_select(pos_mask)
     
     neg_mask = (target != target[0])
+    if torch.cuda.is_available():
+        neg_mask = neg_mask.cuda()
     neg_vals = sim_vals.masked_select(neg_mask)
 
     loss = torch.mean(neg_vals)
@@ -262,7 +264,7 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
             if cuda_available:
                 data = data.cuda(non_blocking=True)
             feature, out = net(data, mode='test')
-            feature_bank.append(feature)
+            feature_bank.append(out)
         # [D, N]
         feature_bank = torch.cat(feature_bank, dim=0).t().contiguous()
         # [N]
@@ -277,7 +279,7 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
 
             total_num += data.size(0)
             # compute cos similarity between each feature vector and feature bank ---> [B, N]
-            sim_matrix = torch.mm(feature, feature_bank)
+            sim_matrix = torch.mm(out, feature_bank)
             # [B, K]
             sim_weight, sim_indices = sim_matrix.topk(k=k, dim=-1)
             # [B, K]
