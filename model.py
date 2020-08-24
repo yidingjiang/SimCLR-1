@@ -8,22 +8,41 @@ import torchvision.transforms.functional as FT
 import numpy as np
 
 class OriginalModel(nn.Module):
-    def __init__(self, feature_dim=128):
+    def __init__(self, feature_dim=128, model='resnet18'):
         super(OriginalModel, self).__init__()
+        
+        resnet = None 
+        if model == 'resnet50': 
+            resnet = resnet50
+        elif model == 'resnet34':
+            resnet = resnet34
+        elif model == 'resnet18':
+            resnet = resnet18
+        else:
+            raise ValueError(f"Specified resnet model {model} not supported.")
 
         self.f = []
-        for name, module in resnet34().named_children():
+        for name, module in resnet().named_children():
             if name == 'conv1':
                 module = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
             if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
                 self.f.append(module)
         # encoder
         self.f = nn.Sequential(*self.f)
-        # projection head
-        self.g = nn.Sequential( nn.Linear(2048, 512, bias=False), 
-                                nn.BatchNorm1d(512),
-                                nn.ReLU(inplace=True), 
-                                nn.Linear(512, feature_dim, bias=True))
+
+        if model == 'resnet18' or model == 'resnet34':
+            # projection head
+            self.g = nn.Sequential( nn.Linear(512, 512, bias=False), 
+                                    nn.BatchNorm1d(512),
+                                    nn.ReLU(inplace=True), 
+                                    nn.Linear(512, feature_dim, bias=True))
+
+        else:
+            # projection head
+            self.g = nn.Sequential( nn.Linear(2048, 512, bias=False), 
+                                    nn.BatchNorm1d(512),
+                                    nn.ReLU(inplace=True), 
+                                    nn.Linear(512, feature_dim, bias=True))
 
     def forward(self, x):
         x = self.f(x)
@@ -138,7 +157,7 @@ class ProposedModel(nn.Module):
     def forward(self, x, rot_mat=None, brightness=None, mode='train'):
         if mode == 'train':
             assert rot_mat is not None and brightness is not None
-        x = self.augment(x, rot_mat, brightness, mode='train')
+        x = self.augment(x, rot_mat, brightness, mode=mode)
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)

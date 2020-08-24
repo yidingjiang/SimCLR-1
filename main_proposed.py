@@ -149,8 +149,6 @@ def get_batch_affine_transform_tensors(batch_size):
 
     if cuda_available:
         theta = theta.cuda()
-        eps = eps.cuda()
-        delta = delta.cuda()
         tx = tx.cuda()
         ty = ty.cuda()
         theta_delta = theta_delta.cuda()
@@ -247,7 +245,7 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
         for data, target in tqdm(memory_data_loader, desc='Feature extracting'):
             if cuda_available:
                 data = data.cuda(non_blocking=True)
-            feature, out = net(data)
+            feature, out = net(data, mode='test')
             feature_bank.append(feature)
         # [D, N]
         feature_bank = torch.cat(feature_bank, dim=0).t().contiguous()
@@ -316,6 +314,8 @@ if __name__ == '__main__':
     parser.add_argument('--output_norm', default=None, type=str, help="Norm to use at the output")
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='learning rate')
+    parser.add_argument('--resnet', default='resnet18', type=str, help='Type of resnet: 1. resnet18, resnet34, resnet50')
+
     # args parse
     args = parser.parse_args()
     feature_dim, k = args.feature_dim, args.k
@@ -346,7 +346,7 @@ if __name__ == '__main__':
     
     print("Data prepared. Now initializing out Model...")
     # model setup and optimizer config
-    model = ProposedModel(feature_dim=feature_dim, norm_type=args.norm_type, output_norm=args.output_norm)
+    model = ProposedModel(feature_dim=feature_dim, norm_type=args.norm_type, output_norm=args.output_norm, model=args.resnet)
     inputs = torch.randn(1, 3, 32, 32)
 
     if cuda_available:
