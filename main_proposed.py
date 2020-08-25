@@ -186,15 +186,16 @@ def corrected_loss(out, target):
     sim_vals = torch.mm(out[0].view(1, -1), out.t())
 
     # I will consider class of the first example as positive
-    # pos_mask = (target == target[0])
-    # pos_vals = sim_vals.masked_select(pos_mask)
+    pos_mask = (target == target[0])
+    pos_mask[0] = False # Don't use the first tensor to compute similarity
+    pos_vals = sim_vals.masked_select(pos_mask)
     
     neg_mask = (target != target[0])
     if torch.cuda.is_available():
         neg_mask = neg_mask.cuda()
     neg_vals = sim_vals.masked_select(neg_mask)
 
-    loss = torch.mean(neg_vals)
+    loss = torch.mean(neg_vals) - torch.mean(pos_vals)
     return loss
 
 # train for one epoch to learn unique features
