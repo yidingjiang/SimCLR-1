@@ -134,7 +134,7 @@ def get_batch_rot_mat(theta, tx, ty):
     return rot_mat
 
 # Checked; works correctly
-def get_batch_affine_transform_tensors(batch_size):
+def get_batch_affine_transform_tensors(batch_size, eps=1e-5):
     # Rotate image by a random angle
     torch_pi = torch.acos(torch.zeros(1, requires_grad=True)).item() * 2
     theta = 2 * torch_pi * torch.rand((batch_size, 1), requires_grad=True) - torch_pi #torch.rand((batch_size, 1), requires_grad=True)
@@ -142,10 +142,10 @@ def get_batch_affine_transform_tensors(batch_size):
     tx = torch.rand((batch_size, 1), requires_grad=True)
     ty = torch.rand((batch_size, 1), requires_grad=True)
 
-    theta_delta = theta + torch.rand_like(theta) * 1e-3
+    theta_delta = theta + eps #torch.rand_like(theta) * 1e-3
 
-    tx_delta = tx + torch.rand_like(tx) * 1e-3
-    ty_delta = ty + torch.rand_like(ty) * 1e-3
+    tx_delta = tx + eps #torch.rand_like(tx) * 1e-3
+    ty_delta = ty + eps #torch.rand_like(ty) * 1e-3
 
     if cuda_available:
         theta = theta.cuda()
@@ -159,16 +159,14 @@ def get_batch_affine_transform_tensors(batch_size):
     rot_mat_dtheta = get_batch_rot_mat(theta_delta, tx, ty)
     rot_mat_dtx = get_batch_rot_mat(theta, tx_delta, ty)
     rot_mat_dty = get_batch_rot_mat(theta, tx, ty_delta)
-
-    return theta, tx, ty, rot_mat, {'r_dtheta': rot_mat_dtheta, 'r_dtx': rot_mat_dtx, 'r_dty': rot_mat_dty, 
-                                    'dtheta': theta_delta, 'dtx': tx_delta, 'dty': ty_delta}
+    return theta, tx, ty, rot_mat, {'r_dtheta': rot_mat_dtheta, 'r_dtx': rot_mat_dtx, 'r_dty': rot_mat_dty}
 
 # get color jitter tensors
-def get_batch_color_jitter_tensors(batch_size):
+def get_batch_color_jitter_tensors(batch_size, eps=1e-5):
     # Generate a value between (0, 0.5)
     constant = torch.tensor([0.5], requires_grad=True)
     brightness = constant * torch.rand((batch_size, 1, 1, 1), requires_grad=True)
-    brightness_delta = brightness + torch.rand_like(brightness) * 1e-3
+    brightness_delta = brightness + eps #torch.rand_like(brightness) * 1e-3
 
     if cuda_available:
         brightness = brightness.cuda()
@@ -201,18 +199,21 @@ def corrected_loss(out, target):
 
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
-    # for name, param in  net.named_parameters():
-    #     if param.requires_grad:
-    #         print(name, param.data)
 
     net.train()
+    avg_jtheta = 0.0
+    avg_jtx = 0.0
+    avg_jty = 0.0
+    avg_jitter = 0.0
+    avg_sim_loss = 0.0
+
     total_loss, total_num, train_bar = 0.0, 0, tqdm(data_loader)
     for pos, target in train_bar:
         if cuda_available:
             pos = pos.cuda(non_blocking=True)
 
-        theta, tx, ty, rot_mat, delta_dict = get_batch_affine_transform_tensors(args.batch_size)
-        brightness, brightness_delta = get_batch_color_jitter_tensors(args.batch_size)
+        theta, tx, ty, rot_mat, delta_dict = get_batch_affine_transform_tensors(args.batch_size, eps=args.eps)
+        brightness, brightness_delta = get_batch_color_jitter_tensors(args.batch_size, eps=args.eps)
 
         # theta.retain_grad()
         # tx.retain_grad()
@@ -222,7 +223,7 @@ def train(net, data_loader, train_optimizer):
         # [B, D]
         feature, out = net(pos, rot_mat, brightness)
         loss = corrected_loss(out, target)
-
+        avg_sim_loss += loss
         # compute exact derivative wrt theta, tx and ty and jitter
         # loss += compute_jacobian_norm(theta, out)
         # loss += compute_jacobian_norm(tx, out)
@@ -236,12 +237,17 @@ def train(net, data_loader, train_optimizer):
         _, out_dty = net(pos, delta_dict['r_dty'], brightness)
         _, out_djitter = net(pos, rot_mat, brightness_delta)
 
-        j_dtheta = torch.norm((out_dtheta - out)/ delta_dict['dtheta'])/args.batch_size
-        j_dtx = torch.norm((out_dtx - out)/ delta_dict['dtx'])/args.batch_size
-        j_dty = torch.norm((out_dty - out)/ delta_dict['dty'])/args.batch_size
-        j_djitter = torch.norm((out_djitter)/ brightness_delta)/args.batch_size
+        j_dtheta = torch.norm((out_dtheta - out)/ args.eps)
+        j_dtx = torch.norm((out_dtx - out)/ args.eps)
+        j_dty = torch.norm((out_dty - out)/ args.eps)
+        j_djitter = torch.norm((out_djitter - out)/args.eps)
         
-        loss += j_dtheta + j_dtx + j_dty + j_djitter
+        avg_jtheta += j_dtheta/args.batch_size
+        avg_jtx += j_dtx/args.batch_size
+        avg_jty += j_dty/args.batch_size
+        avg_jitter += j_djitter/args.batch_size
+
+        loss += (j_dtheta + j_dtx + j_dty + j_djitter)/args.batch_size
 
         train_optimizer.zero_grad()
         loss.backward()
@@ -251,6 +257,8 @@ def train(net, data_loader, train_optimizer):
         total_num += batch_size
         total_loss += loss.item() * batch_size
         train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / total_num))
+    
+    wandb.log({"theta_norm" : avg_jtheta, "tx_norm" : avg_jtx, "ty_norm" : avg_jty, "jitter_norm" : avg_jitter, "contr loss": avg_sim_loss})
     return total_loss / total_num
 
 
@@ -333,7 +341,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='learning rate')
     parser.add_argument('--resnet', default='resnet18', type=str, help='Type of resnet: 1. resnet18, resnet34, resnet50')
-
+    parser.add_argument('--eps', default=1e-4, type=float, help='epsilon to compute jacobian')
     # args parse
     args = parser.parse_args()
     feature_dim, k = args.feature_dim, args.k
