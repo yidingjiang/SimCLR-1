@@ -244,7 +244,7 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
             if cuda_available:
                 data = data.cuda(non_blocking=True)
             feature, out = net(data, mode='test')
-            feature_bank.append(out)
+            feature_bank.append(feature)
         # [D, N]
         feature_bank = torch.cat(feature_bank, dim=0).t().contiguous()
         # [N]
@@ -255,17 +255,16 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
             if cuda_available:
                 data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
 
-            feature, out = net(data, mode='test')
+            feature, out = net(data)
 
             total_num += data.size(0)
             # compute cos similarity between each feature vector and feature bank ---> [B, N]
-            sim_matrix = torch.mm(out, feature_bank)
+            sim_matrix = torch.mm(feature, feature_bank)
             # [B, K]
             sim_weight, sim_indices = sim_matrix.topk(k=k, dim=-1)
-            sim_weight = (sim_weight / temperature).exp()
-            
             # [B, K]
             sim_labels = torch.gather(feature_labels.expand(data.size(0), -1), dim=-1, index=sim_indices)
+            sim_weight = (sim_weight / temperature).exp()
 
             # counts for each class
             one_hot_label = torch.zeros(data.size(0) * k, c, device=sim_labels.device)
@@ -273,13 +272,12 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
             one_hot_label = one_hot_label.scatter(dim=-1, index=sim_labels.view(-1, 1), value=1.0)
             # weighted score ---> [B, C]
             pred_scores = torch.sum(one_hot_label.view(data.size(0), -1, c) * sim_weight.unsqueeze(dim=-1), dim=1)
-            pred_labels = pred_scores.argsort(dim=-1, descending=True)
 
+            pred_labels = pred_scores.argsort(dim=-1, descending=True)
             total_top1 += torch.sum((pred_labels[:, :1] == target.unsqueeze(dim=-1)).any(dim=-1).float()).item()
             total_top5 += torch.sum((pred_labels[:, :5] == target.unsqueeze(dim=-1)).any(dim=-1).float()).item()
             test_bar.set_description('Test Epoch: [{}/{}] Acc@1:{:.2f}% Acc@5:{:.2f}%'
                                      .format(epoch, epochs, total_top1 / total_num * 100, total_top5 / total_num * 100))
-            
             if plot_img:
                 fig, axs = plt.subplots(10, 7)
                 target = target.cpu().detach().numpy()
