@@ -255,7 +255,7 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
             if cuda_available:
                 data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
 
-            feature, out = net(data)
+            feature, out = net(data, mode='test')
 
             total_num += data.size(0)
             # compute cos similarity between each feature vector and feature bank ---> [B, N]
