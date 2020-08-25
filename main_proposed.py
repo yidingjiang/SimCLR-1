@@ -115,7 +115,7 @@ def get_batch_rot_mat(theta, tx, ty):
     mask5[:, 0, 2] = True
 
     mask6 = torch.zeros_like(rot_mat, dtype=torch.bool)
-    mask6[:, 0, 2] = True
+    mask6[:, 1, 2] = True
 
     if cuda_available:
         mask1 = mask1.cuda()
