@@ -109,12 +109,6 @@ class AugmentationModule(nn.Module):
 import kornia.augmentation as K
 class KorniaAugmentationModule(nn.Module):
     def __init__(self, batch_size=512):
-
-        # transforms.RandomResizedCrop(32),
-        # transforms.RandomHorizontalFlip(p=0.5),
-        # transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-        # transforms.RandomGrayscale(p=0.2),
-
         super().__init__()
         # These are standard values for CIFAR10. We will have to change this for imagenet
         self.mu = torch.Tensor([0.4914, 0.4822, 0.4465])
@@ -125,6 +119,10 @@ class KorniaAugmentationModule(nn.Module):
             K.ColorJitter(0.4, 0.4, 0.4, 0.1),
             K.RandomGrayscale(p=0.2)
         )
+
+        self.aff = K.RandomAffine(360)
+        self.jit = K.ColorJitter(0.2, 0.3, 0.2, 0.3)
+        
         self.normalize = K.Normalize(self.mu, self.sigma)
 
     # Note that I should only normalize in test mode; no other type of augmentation should be performed
@@ -139,7 +137,13 @@ class KorniaAugmentationModule(nn.Module):
 
         if mode == 'train':
             # Rotation and translation
-            x = self.augment(x)
+            # x = self.augment(x)
+            aff_params = self.aff.generate_parameters(x.shape)
+            x = self.aff(x, aff_params)
+            
+            jit_params = self.jit.generate_parameters(x.shape)
+            x = self.jit(x, jit_params)
+
             if visualize:
                 pil_img_bright = FT.to_pil_image(x[0])
                 pil_img_bright.show()
