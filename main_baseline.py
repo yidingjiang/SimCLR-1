@@ -87,8 +87,11 @@ def get_batch_affine_transform_tensors(batch_size, eps=1e-5):
     torch_pi = torch.acos(torch.zeros(1, requires_grad=True)).item() * 2
     theta = 2 * torch_pi * torch.rand((batch_size, 1), requires_grad=True) - torch_pi #torch.rand((batch_size, 1), requires_grad=True)
     
-    tx = torch.zeros((batch_size, 1), requires_grad=True)
-    ty = torch.zeros((batch_size, 1), requires_grad=True)
+    # tx = torch.zeros((batch_size, 1), requires_grad=True)
+    # ty = torch.zeros((batch_size, 1), requires_grad=True)
+
+    tx = torch.rand((batch_size, 1), requires_grad=True)
+    ty = torch.rand((batch_size, 1), requires_grad=True)
 
     theta_delta = theta + eps #torch.rand_like(theta) * 1e-3
 
