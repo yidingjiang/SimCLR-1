@@ -123,6 +123,7 @@ class KorniaAugmentationModule(nn.Module):
         self.aff = K.RandomAffine(360)
         self.jit = K.ColorJitter(0.2, 0.3, 0.2, 0.3)
         
+        self.jit_prob = 0.8
         self.normalize = K.Normalize(self.mu, self.sigma)
 
     # Note that I should only normalize in test mode; no other type of augmentation should be performed
@@ -137,16 +138,18 @@ class KorniaAugmentationModule(nn.Module):
 
         if mode == 'train':
             # Rotation and translation
-            # x = self.augment(x)
+            if torch.rand(1) < 0.8:
+                x = self.augment(x)
 
-            aff_params = self.aff.generate_parameters(x.shape)
-            aff_params['translations'] = torch.randint(low=-6, high=6, size=aff_params['translations'].shape)
-            aff_params['angle'] = torch.zeros_like(aff_params['angle'])
-            x = self.aff(x, aff_params)
+            # aff_params = self.aff.generate_parameters(x.shape)
+            # aff_params['translations'] = torch.randint(low=-6, high=6, size=aff_params['translations'].shape)
+            # aff_params['angle'] = torch.zeros_like(aff_params['angle'])
+            # x = self.aff(x, aff_params)
             
-            jit_params = self.jit.generate_parameters(x.shape)
-            x = self.jit(x, jit_params)
-            
+
+            # jit_params = self.jit.generate_parameters(x.shape)
+            # x = self.jit(x, jit_params)
+
             if visualize:
                 pil_img_bright = FT.to_pil_image(x[0])
                 pil_img_bright.show()
