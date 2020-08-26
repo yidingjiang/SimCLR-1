@@ -138,12 +138,15 @@ class KorniaAugmentationModule(nn.Module):
         if mode == 'train':
             # Rotation and translation
             # x = self.augment(x)
+
             aff_params = self.aff.generate_parameters(x.shape)
+            aff_params['translations'] = torch.randint(low=-6, high=6, size=aff_params['translations'].shape)
+            aff_params['angle'] = torch.zeros_like(aff_params['angle'])
             x = self.aff(x, aff_params)
             
             jit_params = self.jit.generate_parameters(x.shape)
             x = self.jit(x, jit_params)
-
+            
             if visualize:
                 pil_img_bright = FT.to_pil_image(x[0])
                 pil_img_bright.show()
