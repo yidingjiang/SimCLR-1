@@ -220,6 +220,8 @@ def train(net, data_loader, train_optimizer):
         theta, tx, ty, rot_mat, delta_dict = get_batch_affine_transform_tensors(args.batch_size, eps=eps)
         brightness, brightness_delta = get_batch_color_jitter_tensors(args.batch_size, eps=eps)
 
+        if cuda_available:
+            eps = eps.cuda()
         # theta.retain_grad()
         # tx.retain_grad()
         # ty.retain_grad()
@@ -247,10 +249,10 @@ def train(net, data_loader, train_optimizer):
         j_dty = torch.norm((out_dty - out)/ eps)
         j_djitter = torch.norm((out_djitter - out)/eps)
         
-        avg_jtheta += j_dtheta/args.batch_size
-        avg_jtx += j_dtx/args.batch_size
-        avg_jty += j_dty/args.batch_size
-        avg_jitter += j_djitter/args.batch_size
+        avg_jtheta += j_dtheta.item()/args.batch_size
+        avg_jtx += j_dtx.item()/args.batch_size
+        avg_jty += j_dty.item()/args.batch_size
+        avg_jitter += j_djitter.item()/args.batch_size
 
         grad_loss = (j_dtheta + j_dtx + j_dty + j_djitter)/args.batch_size
 
