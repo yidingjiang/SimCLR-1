@@ -22,6 +22,9 @@ class CIFAR10Pair(CIFAR10):
 class CIFAR10Data(CIFAR10):
     """CIFAR10 Dataset.
     """
+    # def __init__(self):
+    #     super(CIFAR10Data, self).__init__()
+    #     # create a dictionar
 
     def __getitem__(self, index):
         img, target = self.data[index], self.targets[index]
@@ -45,7 +48,8 @@ train_transform = transforms.Compose([
     transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
     transforms.RandomGrayscale(p=0.2),
     transforms.ToTensor(),
-    transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])])
+    transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
+    ])
 
 train_normalize_transform = transforms.Compose([
     transforms.ToTensor(),

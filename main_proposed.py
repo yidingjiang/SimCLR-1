@@ -139,8 +139,8 @@ def get_batch_affine_transform_tensors(batch_size, eps=1e-5):
     torch_pi = torch.acos(torch.zeros(1, requires_grad=True)).item() * 2
     theta = 2 * torch_pi * torch.rand((batch_size, 1), requires_grad=True) - torch_pi #torch.rand((batch_size, 1), requires_grad=True)
     
-    tx = torch.rand((batch_size, 1), requires_grad=True)
-    ty = torch.rand((batch_size, 1), requires_grad=True)
+    tx = torch.randn((batch_size, 1), requires_grad=True)
+    ty = torch.randn((batch_size, 1), requires_grad=True)
 
     theta_delta = theta + eps #torch.rand_like(theta) * 1e-3
 
@@ -208,6 +208,8 @@ def train(net, data_loader, train_optimizer):
     avg_jitter = 0.0
     avg_sim_loss = 0.0
 
+    avg_contr_loss, avg_grad_loss, total_itr = 0, 0, 0
+
     total_loss, total_num, train_bar = 0.0, 0, tqdm(data_loader)
     for pos, target in train_bar:
         if cuda_available:
@@ -223,7 +225,7 @@ def train(net, data_loader, train_optimizer):
 
         # [B, D]
         feature, out = net(pos, rot_mat, brightness)
-        loss = corrected_loss(out, target)
+        contr_loss = corrected_loss(out, target)
         avg_sim_loss += loss
         # compute exact derivative wrt theta, tx and ty and jitter
         # loss += compute_jacobian_norm(theta, out)
@@ -248,19 +250,27 @@ def train(net, data_loader, train_optimizer):
         avg_jty += j_dty/args.batch_size
         avg_jitter += j_djitter/args.batch_size
 
-        loss += (j_dtheta + j_dtx + j_dty + j_djitter)/args.batch_size
+        grad_loss = (j_dtheta + j_dtx + j_dty + j_djitter)/args.batch_size
 
+        loss = grad_loss + contr_loss
+        
         train_optimizer.zero_grad()
         loss.backward()
 
         train_optimizer.step()
-
+        total_itr += 1
         total_num += batch_size
-        total_loss += loss.item() * batch_size
-        train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / total_num))
+
+        avg_contr_loss += contr_loss.item()
+        avg_grad_loss += grad_loss.item() * args.batch_size
+
+        total_loss += avg_contr_loss + avg_grad_loss/total_num
+
+        train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss))
     
     wandb.log({"theta_norm" : avg_jtheta, "tx_norm" : avg_jtx, "ty_norm" : avg_jty, "jitter_norm" : avg_jitter, "contr loss": avg_sim_loss})
-    return total_loss / total_num
+    total_loss = avg_contr_loss/total_itr + avg_grad_loss/total_num
+    return total_loss
 
 
 # test for one epoch, use weighted knn to find the most similar images' label to assign the test image

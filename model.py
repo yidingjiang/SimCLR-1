@@ -61,7 +61,6 @@ class AugmentationModule(nn.Module):
 
     # Note that I should only normalize in test mode; no other type of augmentation should be performed
     def forward(self, x, rot_mat, brightness, mode='train', visualize=False):
-        import pdb; pdb.set_trace()
         B = x.shape[0]
 
         ###### Uncomment and use following code to visualize images
@@ -77,13 +76,13 @@ class AugmentationModule(nn.Module):
                 pil_img_rotated = FT.to_pil_image(x[0])
                 pil_img_rotated.show()
 
-            # # Color jitter
-            # x = x + brightness
-            # x = torch.clamp(x, 0.0, 1.0)
+            # Color jitter
+            x = x + brightness
+            x = torch.clamp(x, 0.0, 1.0)
 
-            # if visualize:
-            #     pil_img_bright = FT.to_pil_image(x[0])
-            #     pil_img_bright.show()
+            if visualize:
+                pil_img_bright = FT.to_pil_image(x[0])
+                pil_img_bright.show()
 
         #  Normalize - implementing this because inbuilt normalize doesn't seem to support batch normalization
         mean = self.mu.repeat(B, 1, 1, 1).view(B, 3, 1, 1)
@@ -91,7 +90,7 @@ class AugmentationModule(nn.Module):
         if torch.cuda.is_available():
             mean = mean.cuda()
             std = std.cuda()
-        x_norm = (x - mean)/std
+        x = (x - mean)/std
         
         # Used to check if normalization above gives same value as inbuilt normalization
         # x_test = torch.zeros_like(x)
@@ -101,8 +100,8 @@ class AugmentationModule(nn.Module):
         if visualize:
             pil_img_normalized = FT.to_pil_image(x[0])
             pil_img_normalized.show()
-        #     pil_img_normalized_test = FT.to_pil_image(x_test[0])
-        #     pil_img_normalized_test.show()
+            # pil_img_normalized_test = FT.to_pil_image(x_test[0])
+            # pil_img_normalized_test.show()
 
         return x
 
@@ -127,8 +126,7 @@ class KorniaAugmentationModule(nn.Module):
         self.normalize = K.Normalize(self.mu, self.sigma)
 
     # Note that I should only normalize in test mode; no other type of augmentation should be performed
-    def forward(self, x, rot_mat, brightness, mode='train', visualize=False):
-        # import pdb; pdb.set_trace()
+    def forward(self, x, aff_params, jit_params, mode='train', visualize=False):
         B = x.shape[0]
 
         ###### Uncomment and use following code to visualize images
@@ -138,17 +136,16 @@ class KorniaAugmentationModule(nn.Module):
 
         if mode == 'train':
             # Rotation and translation
-            if torch.rand(1) < 0.8:
-                x = self.augment(x)
+            # if torch.rand(1) < 0.8:
+            #     x = self.augment(x)
 
             # aff_params = self.aff.generate_parameters(x.shape)
             # aff_params['translations'] = torch.randint(low=-6, high=6, size=aff_params['translations'].shape)
             # aff_params['angle'] = torch.zeros_like(aff_params['angle'])
-            # x = self.aff(x, aff_params)
-            
+            x = self.aff(x, aff_params)
 
             # jit_params = self.jit.generate_parameters(x.shape)
-            # x = self.jit(x, jit_params)
+            x = self.jit(x, jit_params)
 
             if visualize:
                 pil_img_bright = FT.to_pil_image(x[0])
@@ -162,7 +159,9 @@ class KorniaAugmentationModule(nn.Module):
         #     std = std.cuda()
         # import pdb; pdb.set_trace()
         # x_norm = (x - mean)/std
+
         x = self.normalize(x)
+        
         # Used to check if normalization above gives same value as inbuilt normalization
         # x_test = torch.zeros_like(x)
         # for b in range(B):
@@ -220,10 +219,10 @@ class ProposedModel(nn.Module):
 
         self.augment = KorniaAugmentationModule() #AugmentationModule()
 
-    def forward(self, x, rot_mat=None, brightness=None, mode='train'):
+    def forward(self, x, affine_params=None, jit_params=None, mode='train'):
         if mode == 'train':
-            assert rot_mat is not None and brightness is not None
-        x = self.augment(x, rot_mat, brightness, mode=mode)
+            assert affine_params is not None and jit_params is not None
+        x = self.augment(x, affine_params, jit_params, mode=mode)
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)
