@@ -210,13 +210,15 @@ def train(net, data_loader, train_optimizer):
 
     avg_contr_loss, avg_grad_loss, total_itr = 0, 0, 0
 
+    eps = torch.ones(1) * args.eps
+
     total_loss, total_num, train_bar = 0.0, 0, tqdm(data_loader)
     for pos, target in train_bar:
         if cuda_available:
             pos = pos.cuda(non_blocking=True)
 
-        theta, tx, ty, rot_mat, delta_dict = get_batch_affine_transform_tensors(args.batch_size, eps=args.eps)
-        brightness, brightness_delta = get_batch_color_jitter_tensors(args.batch_size, eps=args.eps)
+        theta, tx, ty, rot_mat, delta_dict = get_batch_affine_transform_tensors(args.batch_size, eps=eps)
+        brightness, brightness_delta = get_batch_color_jitter_tensors(args.batch_size, eps=eps)
 
         # theta.retain_grad()
         # tx.retain_grad()
@@ -226,7 +228,7 @@ def train(net, data_loader, train_optimizer):
         # [B, D]
         feature, out = net(pos, rot_mat, brightness)
         contr_loss = corrected_loss(out, target)
-        avg_sim_loss += loss
+        avg_sim_loss += contr_loss
         # compute exact derivative wrt theta, tx and ty and jitter
         # loss += compute_jacobian_norm(theta, out)
         # loss += compute_jacobian_norm(tx, out)
@@ -240,10 +242,10 @@ def train(net, data_loader, train_optimizer):
         _, out_dty = net(pos, delta_dict['r_dty'], brightness)
         _, out_djitter = net(pos, rot_mat, brightness_delta)
 
-        j_dtheta = torch.norm((out_dtheta - out)/ args.eps)
-        j_dtx = torch.norm((out_dtx - out)/ args.eps)
-        j_dty = torch.norm((out_dty - out)/ args.eps)
-        j_djitter = torch.norm((out_djitter - out)/args.eps)
+        j_dtheta = torch.norm((out_dtheta - out)/ eps)
+        j_dtx = torch.norm((out_dtx - out)/ eps)
+        j_dty = torch.norm((out_dty - out)/ eps)
+        j_djitter = torch.norm((out_djitter - out)/eps)
         
         avg_jtheta += j_dtheta/args.batch_size
         avg_jtx += j_dtx/args.batch_size
@@ -253,7 +255,7 @@ def train(net, data_loader, train_optimizer):
         grad_loss = (j_dtheta + j_dtx + j_dty + j_djitter)/args.batch_size
 
         loss = grad_loss + contr_loss
-        
+
         train_optimizer.zero_grad()
         loss.backward()
 
