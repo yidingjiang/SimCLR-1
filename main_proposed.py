@@ -96,34 +96,33 @@ def compute_jacobian_norm(inputs, output):
 #     return theta, rot_mat
 
 def get_batch_rot_mat(theta, tx, ty):
-    rot_mat = torch.zeros((batch_size, 2, 3), requires_grad=True)
-    if torch.cuda.is_available():
-        rot_mat = rot_mat.cuda()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    rot_mat = torch.zeros((batch_size, 2, 3), requires_grad=True, device=device)
 
-    mask1 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask1 = torch.zeros_like(rot_mat, dtype=torch.bool, device=device)
     mask1[:, 0, 0] = True
-    mask2 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask2 = torch.zeros_like(rot_mat, dtype=torch.bool, device=device)
     mask2[:, 0, 1] = True
-    mask3 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask3 = torch.zeros_like(rot_mat, dtype=torch.bool, device=device)
     mask3[:, 1, 0] = True
-    mask4 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask4 = torch.zeros_like(rot_mat, dtype=torch.bool, device=device)
     mask4[:, 1, 1] = True
 
     # add some translation too
     # small horizontal translation
-    mask5 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask5 = torch.zeros_like(rot_mat, dtype=torch.bool, device=device)
     mask5[:, 0, 2] = True
 
-    mask6 = torch.zeros_like(rot_mat, dtype=torch.bool)
+    mask6 = torch.zeros_like(rot_mat, dtype=torch.bool, device=device)
     mask6[:, 1, 2] = True
 
-    if cuda_available:
-        mask1 = mask1.cuda()
-        mask2 = mask2.cuda()
-        mask3 = mask3.cuda()
-        mask4 = mask4.cuda()
-        mask5 = mask5.cuda()
-        mask6 = mask6.cuda()
+    # if cuda_available:
+    #     mask1 = mask1.cuda()
+    #     mask2 = mask2.cuda()
+    #     mask3 = mask3.cuda()
+    #     mask4 = mask4.cuda()
+    #     mask5 = mask5.cuda()
+    #     mask6 = mask6.cuda()
 
     rot_mat = rot_mat.masked_scatter(mask1, theta.cos())
     rot_mat = rot_mat.masked_scatter(mask2, -theta.sin())
@@ -135,25 +134,27 @@ def get_batch_rot_mat(theta, tx, ty):
 
 # Checked; works correctly
 def get_batch_affine_transform_tensors(batch_size, eps=1e-5):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     # Rotate image by a random angle
-    torch_pi = torch.acos(torch.zeros(1, requires_grad=True)).item() * 2
-    theta = 2 * torch_pi * torch.rand((batch_size, 1), requires_grad=True) - torch_pi #torch.rand((batch_size, 1), requires_grad=True)
+    torch_pi = torch.acos(torch.zeros(1, requires_grad=True, device=device)).item() * 2
+    theta = 2 * torch_pi * torch.rand((batch_size, 1), requires_grad=True, device=device) - torch_pi #torch.rand((batch_size, 1), requires_grad=True)
     
-    tx = torch.randn((batch_size, 1), requires_grad=True)
-    ty = torch.randn((batch_size, 1), requires_grad=True)
+    tx = torch.randn((batch_size, 1), requires_grad=True, device=device)
+    ty = torch.randn((batch_size, 1), requires_grad=True, device=device)
 
     theta_delta = theta + eps #torch.rand_like(theta) * 1e-3
 
     tx_delta = tx + eps #torch.rand_like(tx) * 1e-3
     ty_delta = ty + eps #torch.rand_like(ty) * 1e-3
 
-    if cuda_available:
-        theta = theta.cuda()
-        tx = tx.cuda()
-        ty = ty.cuda()
-        theta_delta = theta_delta.cuda()
-        tx_delta = tx_delta.cuda()
-        ty_delta = ty_delta.cuda()
+    # if cuda_available:
+    #     theta = theta.cuda()
+    #     tx = tx.cuda()
+    #     ty = ty.cuda()
+    #     theta_delta = theta_delta.cuda()
+    #     tx_delta = tx_delta.cuda()
+    #     ty_delta = ty_delta.cuda()
 
     rot_mat = get_batch_rot_mat(theta, tx, ty)
     rot_mat_dtheta = get_batch_rot_mat(theta_delta, tx, ty)
@@ -163,14 +164,15 @@ def get_batch_affine_transform_tensors(batch_size, eps=1e-5):
 
 # get color jitter tensors
 def get_batch_color_jitter_tensors(batch_size, eps=1e-5):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # Generate a value between (0, 0.5)
-    constant = torch.tensor([0.5], requires_grad=True)
-    brightness = constant * torch.rand((batch_size, 1, 1, 1), requires_grad=True)
+    constant = torch.tensor([0.5], requires_grad=True, device=device)
+    brightness = constant * torch.rand((batch_size, 1, 1, 1), requires_grad=True, device=device)
     brightness_delta = brightness + eps #torch.rand_like(brightness) * 1e-3
 
-    if cuda_available:
-        brightness = brightness.cuda()
-        brightness_delta = brightness_delta.cuda()
+    # if cuda_available:
+    #     brightness = brightness.cuda()
+    #     brightness_delta = brightness_delta.cuda()
 
     return brightness, brightness_delta
 
@@ -200,7 +202,7 @@ def corrected_loss(out, target):
 
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
-
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net.train()
     avg_jtheta = 0.0
     avg_jtx = 0.0
@@ -210,7 +212,7 @@ def train(net, data_loader, train_optimizer):
 
     avg_contr_loss, avg_grad_loss, total_itr = 0, 0, 0
 
-    eps = torch.ones(1) * args.eps
+    eps = torch.ones(1, device=device) * args.eps
 
     total_loss, total_num, train_bar = 0.0, 0, tqdm(data_loader)
     for pos, target in train_bar:
@@ -220,8 +222,6 @@ def train(net, data_loader, train_optimizer):
         theta, tx, ty, rot_mat, delta_dict = get_batch_affine_transform_tensors(args.batch_size, eps=eps)
         brightness, brightness_delta = get_batch_color_jitter_tensors(args.batch_size, eps=eps)
 
-        if cuda_available:
-            eps = eps.cuda()
         # theta.retain_grad()
         # tx.retain_grad()
         # ty.retain_grad()
