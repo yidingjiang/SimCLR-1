@@ -87,6 +87,7 @@ def train(net, data_loader, train_optimizer):
     for pos, target in train_bar:
         if cuda_available:
             pos = pos.cuda(non_blocking=True)
+            target = target.cuda(non_blocking=True)
 
         affine_params, affine_params_delta = get_batch_affine_transform_tensors(net, shape=pos.shape, eps=args.eps)
         jit_params, jit_params_delta = get_batch_color_jitter_tensors(net, shape=pos.shape, eps=args.eps)
@@ -278,5 +279,3 @@ if __name__ == '__main__':
         if test_acc_1 > best_acc:
             best_acc = test_acc_1
             torch.save(model.state_dict(), 'results/{}_model.pth'.format(save_name_pre))
-
-torch.autograd.grad(outputs=out[:, i], inputs=theta, grad_outputs=torch.ones(len(rot_mat)), retain_graph=True, create_graph=True)[0]

@@ -218,7 +218,7 @@ def train(net, data_loader, train_optimizer):
     for pos, target in train_bar:
         if cuda_available:
             pos = pos.cuda(non_blocking=True)
-
+            target = target.cuda(non_blocking=True)
         theta, tx, ty, rot_mat, delta_dict = get_batch_affine_transform_tensors(args.batch_size, eps=eps)
         brightness, brightness_delta = get_batch_color_jitter_tensors(args.batch_size, eps=eps)
 
