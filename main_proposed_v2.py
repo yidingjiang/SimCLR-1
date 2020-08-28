@@ -91,6 +91,7 @@ def train(net, data_loader, train_optimizer):
     for pos, target in train_bar:
         if cuda_available:
             pos = pos.cuda(non_blocking=True)
+            target = target.cuda(non_blocking=True)
 
         affine_params, affine_params_delta = get_batch_affine_transform_tensors(net, shape=pos.shape, eps=args.eps)
         jit_params, jit_params_delta = get_batch_color_jitter_tensors(net, shape=pos.shape, eps=args.eps)
@@ -127,7 +128,7 @@ def train(net, data_loader, train_optimizer):
 
         train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss))
     
-    wandb.log({"theta_norm" : avg_jtheta, "tx_norm" : avg_jtx, "ty_norm" : avg_jty, "jitter_norm" : avg_jitter, "contr loss": avg_sim_loss})
+    wandb.log({"txy_norm" : avg_jtxy, "jitter_norm" : avg_jitter, "contr loss": avg_sim_loss})
     total_loss = avg_contr_loss/total_itr + avg_grad_loss/total_num
     return total_loss
 
@@ -282,5 +283,3 @@ if __name__ == '__main__':
         if test_acc_1 > best_acc:
             best_acc = test_acc_1
             torch.save(model.state_dict(), 'results/{}_model.pth'.format(save_name_pre))
-
-torch.autograd.grad(outputs=out[:, i], inputs=theta, grad_outputs=torch.ones(len(rot_mat)), retain_graph=True, create_graph=True)[0]

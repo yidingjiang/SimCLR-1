@@ -390,5 +390,3 @@ if __name__ == '__main__':
         if test_acc_1 > best_acc:
             best_acc = test_acc_1
             torch.save(model.state_dict(), 'results/{}_model.pth'.format(save_name_pre))
-
-torch.autograd.grad(outputs=out[:, i], inputs=theta, grad_outputs=torch.ones(len(rot_mat)), retain_graph=True, create_graph=True)[0]
