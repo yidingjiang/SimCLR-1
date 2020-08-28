@@ -30,15 +30,14 @@ def get_batch_affine_transform_tensors(net, shape, eps=1e-3):
     aff_params_delta['angle'] = torch.zeros_like(aff_params_delta['angle'])
 
     if cuda_available:
-        aff_params = aff_params.cuda()
-        aff_params_delta = aff_params_delta.cuda()
+        for k in aff_params.keys():
+            aff_params[k] = aff_params[k].cuda()
+            aff_params_delta[k] = aff_params_delta[k].cuda()
     return aff_params, aff_params_delta
 
 # get color jitter tensors
 def get_batch_color_jitter_tensors(net, shape, eps=1e-3):
     jit_params = net.augment.jit.generate_parameters(shape)
-    if cuda_available:
-        jit_params = jit_params.cuda()
 
     jit_params_delta = net.augment.jit.generate_parameters(shape)
     for k in jit_params.keys():
@@ -46,6 +45,11 @@ def get_batch_color_jitter_tensors(net, shape, eps=1e-3):
             jit_params_delta[k] = jit_params[k]
         else:
             jit_params_delta[k] = jit_params[k] + eps
+
+    if cuda_available:
+        for k in jit_params.keys():
+            jit_params[k] = jit_params[k].cuda()
+            jit_params_delta[k] = jit_params_delta[k].cuda()
 
     return  jit_params, jit_params_delta
 
@@ -124,7 +128,7 @@ def train(net, data_loader, train_optimizer):
 
         train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss))
     
-    wandb.log({"theta_norm" : avg_jtheta, "tx_norm" : avg_jtx, "ty_norm" : avg_jty, "jitter_norm" : avg_jitter, "contr loss": avg_sim_loss})
+    wandb.log({"txy_norm" : avg_jtxy, "jitter_norm" : avg_jitter, "contr loss": avg_sim_loss})
     total_loss = avg_contr_loss/total_itr + avg_grad_loss/total_num
     return total_loss
 
