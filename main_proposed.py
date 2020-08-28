@@ -197,8 +197,9 @@ def corrected_loss(out, target):
         neg_mask = neg_mask.cuda()
     neg_vals = sim_vals.masked_select(neg_mask)
 
-    loss = torch.mean(neg_vals) - torch.mean(pos_vals)
-    return loss
+    pos_loss =  torch.mean(pos_vals)
+    neg_loss = torch.mean(neg_vals)
+    return pos_loss, neg_loss
 
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
@@ -211,7 +212,7 @@ def train(net, data_loader, train_optimizer):
     avg_sim_loss = 0.0
 
     avg_contr_loss, avg_grad_loss, total_itr = 0, 0, 0
-
+    avg_pos_loss, avg_neg_loss = 0, 0
     eps = torch.ones(1, device=device) * args.eps
 
     total_loss, total_num, train_bar = 0.0, 0, tqdm(data_loader)
@@ -229,7 +230,11 @@ def train(net, data_loader, train_optimizer):
 
         # [B, D]
         feature, out = net(pos, rot_mat, brightness)
-        contr_loss = corrected_loss(out, target)
+        pos_loss, neg_loss = corrected_loss(out, target)
+        avg_pos_loss += pos_loss
+        avg_neg_loss += neg_loss
+
+        contr_loss = neg_loss - pos_loss 
         avg_sim_loss += contr_loss
         # compute exact derivative wrt theta, tx and ty and jitter
         # loss += compute_jacobian_norm(theta, out)
@@ -272,7 +277,9 @@ def train(net, data_loader, train_optimizer):
 
         train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss))
     
-    wandb.log({"theta_norm" : avg_jtheta, "tx_norm" : avg_jtx, "ty_norm" : avg_jty, "jitter_norm" : avg_jitter, "contr loss": avg_sim_loss})
+    wandb.log({"theta_norm" : avg_jtheta, "tx_norm" : avg_jtx, "ty_norm" : avg_jty, "jitter_norm" : avg_jitter, 
+                "contr loss": avg_sim_loss, "pos loss": pos_loss, "neg_loss": neg_loss})
+
     total_loss = avg_contr_loss/total_itr + avg_grad_loss/total_num
     return total_loss
 
@@ -287,7 +294,7 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
             if cuda_available:
                 data = data.cuda(non_blocking=True)
             feature, out = net(data, mode='test')
-            feature_bank.append(out)
+            feature_bank.append(feature)
         # [D, N]
         feature_bank = torch.cat(feature_bank, dim=0).t().contiguous()
         # [N]
@@ -302,7 +309,7 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
 
             total_num += data.size(0)
             # compute cos similarity between each feature vector and feature bank ---> [B, N]
-            sim_matrix = torch.mm(out, feature_bank)
+            sim_matrix = torch.mm(feature, feature_bank)
             # [B, K]
             sim_weight, sim_indices = sim_matrix.topk(k=k, dim=-1)
             # [B, K]
