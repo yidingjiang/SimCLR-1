@@ -74,8 +74,9 @@ def corrected_loss(out, target):
         neg_mask = neg_mask.cuda()
     neg_vals = sim_vals.masked_select(neg_mask)
 
-    loss = torch.mean(neg_vals) - torch.mean(pos_vals)
-    return loss
+    pos_loss =  torch.mean(pos_vals)
+    neg_loss = torch.mean(neg_vals)
+    return pos_loss, neg_loss
 
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
@@ -86,6 +87,7 @@ def train(net, data_loader, train_optimizer):
     avg_sim_loss = 0.0
 
     avg_contr_loss, avg_grad_loss, total_itr = 0, 0, 0
+    avg_pos_loss, avg_neg_loss = 0, 0
 
     total_loss, total_num, train_bar = 0.0, 0, tqdm(data_loader)
     for pos, target in train_bar:
@@ -98,7 +100,11 @@ def train(net, data_loader, train_optimizer):
 
         # [B, D]
         feature, out = net(pos, affine_params, jit_params)
-        contr_loss = corrected_loss(out, target)
+        pos_loss, neg_loss = corrected_loss(out, target)
+        avg_pos_loss += pos_loss
+        avg_neg_loss += neg_loss
+
+        contr_loss = neg_loss - pos_loss 
         avg_sim_loss += contr_loss
 
         # compute approximate derivative wrt theta, tx and ty and jitter
@@ -128,7 +134,7 @@ def train(net, data_loader, train_optimizer):
 
         train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss))
     
-    wandb.log({"txy_norm" : avg_jtxy, "jitter_norm" : avg_jitter, "contr loss": avg_sim_loss})
+    wandb.log({"txy_norm" : avg_jtxy, "jitter_norm" : avg_jitter, "contr loss": avg_sim_loss, "pos loss": pos_loss, "neg_loss": neg_loss})
     total_loss = avg_contr_loss/total_itr + avg_grad_loss/total_num
     return total_loss
 
