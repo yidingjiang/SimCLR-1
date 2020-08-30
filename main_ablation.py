@@ -75,16 +75,16 @@ def train(net, data_loader, train_optimizer):
         avg_contr_loss += loss.item()
         
         # compute approximate derivative wrt theta, tx and ty and jitter
-        _, out_djitter1 = net(pos, jit_params_delta1)    
-        j_djitter1 = torch.norm((out_djitter1 - out_1)/args.eps)
+        _, out_djitter1 = net(pos, jit_params_delta1)   
+        j_djitter1 = torch.mean(torch.norm((out_djitter1 - out_1)/args.eps, dim=1))
 
         # compute approximate derivative wrt theta, tx and ty and jitter
         _, out_djitter2 = net(pos, jit_params_delta2)    
-        j_djitter2 = torch.norm((out_djitter2 - out_2)/args.eps)
+        j_djitter2 = torch.mean(torch.norm((out_djitter2 - out_2)/args.eps, dim=1))
 
         avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
 
-        grad_loss = (j_djitter1 + j_djitter2)/args.batch_size
+        grad_loss = (j_djitter1 + j_djitter2)
 
         loss += args.lamda * grad_loss
 
@@ -170,7 +170,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train SimCLR')
     parser.add_argument('--feature_dim', default=128, type=int, help='Feature dim for latent vector')
     parser.add_argument('--k', default=200, type=int, help='Top k most similar images used to predict the label')
-    parser.add_argument('--batch_size', default=128, type=int, help='Number of images in each mini-batch')
+    parser.add_argument('--batch_size', default=32, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--epochs', default=150, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--model_type', default='proposed', type=str, help='Type of model to train - original SimCLR (original) or Proposed (proposed)')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')
