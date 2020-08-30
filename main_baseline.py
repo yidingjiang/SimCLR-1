@@ -93,7 +93,8 @@ def train(net, data_loader, train_optimizer):
         pos_sim = torch.cat([pos_sim, pos_sim], dim=0)
 
         loss = (-torch.log(pos_sim / sim_matrix.sum(dim=-1))).mean()
-        avg_contr_loss += loss
+        avg_contr_loss += loss.item() * batch_size
+
         # compute approximate derivative wrt theta, tx and ty and jitter
         _, out_dtxy1 = net(pos, affine_params_delta1, jit_params1)
         _, out_djitter1 = net(pos, affine_params1, jit_params_delta1)    
@@ -108,11 +109,11 @@ def train(net, data_loader, train_optimizer):
         j_dtxy2 = torch.norm((out_dtxy2 - out_2)/ args.eps)
         j_djitter2 = torch.norm((out_djitter2 - out_2)/args.eps)
 
-        avg_jtxy += j_dtxy1/args.batch_size + j_dtxy2/args.batch_size
-        avg_jitter += j_djitter1/args.batch_size + j_djitter2/args.batch_size
+        avg_jtxy += j_dtxy1 + j_dtxy2
+        avg_jitter += j_djitter1 + j_djitter2
 
         grad_loss = (j_dtxy1 + j_djitter1 + j_dtxy2 + j_djitter2)/args.batch_size
-
+        
         loss += args.lamda * grad_loss
 
         train_optimizer.zero_grad()
@@ -124,7 +125,7 @@ def train(net, data_loader, train_optimizer):
         total_loss += loss.item() * batch_size
         train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / total_num))
 
-    wandb.log({"txy_norm" : avg_jtxy, "jitter_norm" : avg_jitter, "contr loss": avg_contr_loss})
+    wandb.log({"txy_norm" : avg_jtxy / total_num, "jitter_norm" : avg_jitter / total_num, "contr loss": avg_contr_loss / total_num})
     return total_loss / total_num
 
 
