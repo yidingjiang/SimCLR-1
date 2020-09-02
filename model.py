@@ -279,12 +279,12 @@ class SimCLRJacobianModel(nn.Module):
         # projection head
         self.g = nn.Sequential(*proj_layers)
 
-        self.augment = KorniaAugmentationModule() #AugmentationModule()
+        self.augment = KorniaAugmentationModule()
 
     def forward(self, x, jit_params=None, mode='train'):
         if mode == 'train':
             assert jit_params is not None
-        x = self.augment(x, jit_params=jit_params, mode=mode)
+        x = self.augment(x, aff_params=None, jit_params=jit_params, mode=mode)
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)

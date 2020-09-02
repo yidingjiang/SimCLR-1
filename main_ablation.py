@@ -1,5 +1,6 @@
 import argparse
 import os
+from datetime import datetime
 
 import pandas as pd
 import torch
@@ -72,7 +73,7 @@ def train(net, data_loader, train_optimizer):
         pos_sim = torch.cat([pos_sim, pos_sim], dim=0)
 
         loss = (-torch.log(pos_sim / sim_matrix.sum(dim=-1))).mean()
-        avg_contr_loss += loss.item()
+        avg_contr_loss += loss.item() * args.batch_size
         
         # compute approximate derivative wrt theta, tx and ty and jitter
         _, out_djitter1 = net(pos, jit_params_delta1)   
@@ -172,7 +173,7 @@ if __name__ == '__main__':
     parser.add_argument('--k', default=200, type=int, help='Top k most similar images used to predict the label')
     parser.add_argument('--batch_size', default=32, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--epochs', default=150, type=int, help='Number of sweeps over the dataset to train')
-    parser.add_argument('--model_type', default='proposed', type=str, help='Type of model to train - original SimCLR (original) or Proposed (proposed)')
+    parser.add_argument('--model_type', default='simclr_ablation', type=str, help='Type of model to train - original SimCLR (original) or Proposed (proposed)')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')
     parser.add_argument('--use_wandb', default=False, type=bool, help='Log results to wandb')
     parser.add_argument('--norm_type', default='batch', type=str, help="Type of norm to use in between FC layers of the projection head")
@@ -183,6 +184,8 @@ if __name__ == '__main__':
     parser.add_argument('--eps', default=1e-4, type=float, help='epsilon to compute jacobian')
     parser.add_argument('--temperature', default=0.5, type=float, help='Temperature used in softmax')
     parser.add_argument('--lamda', default=1, type=float, help='weight for jacobian norm')
+    parser.add_argument('--exp_name', required=True, type=str, help="name of experiment")
+    parser.add_argument('--save_interval', default=25, type=int, help='Number of images in each mini-batch')
 
     # args parse
     args = parser.parse_args()
@@ -222,25 +225,26 @@ if __name__ == '__main__':
         model = model.cuda()
         inputs = inputs.cuda()
 
-    # flops, params = profile(model, inputs=(inputs, theta))
-    # flops, params = clever_format([flops, params])
-    # print('# Model Params: {} FLOPs: {}'.format(params, flops))
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     c = len(memory_data.classes)
 
-    # training loop
+    # Some initial setup for saving checkpoints and results
     results = {'train_loss': [], 'test_acc@1': [], 'test_acc@5': []}
-    save_name_pre = 'proposed_{}_{}_{}_{}_{}_{}'.format(feature_dim, k, batch_size, epochs, args.norm_type, args.output_norm)
+    save_name_pre = '{}_{}_{}_{}_{}_{}'.format(args.exp_name, args.model_type, feature_dim, k, batch_size, epochs)
 
     if not os.path.exists('results'):
         os.mkdir('results')
     
+    output_dir = 'results/{}'.format(datetime.now().strftime('%Y-%m-%d'))
+    os.mkdir(output_dir)
+
+    # training loop
     best_acc = 0.0
     for epoch in range(1, epochs + 1):
         train_loss = train(model, train_loader, optimizer)
         results['train_loss'].append(train_loss)
-        plot_img = False
+        # plot_img = False
         # if (epoch-1) % 20 == 0 or epoch == epochs - 1:
         #     plot_img = True
         test_acc_1, test_acc_5 = test(model, memory_loader, test_loader, epoch, plot_img=plot_img)
@@ -254,4 +258,7 @@ if __name__ == '__main__':
         data_frame.to_csv('results/{}_statistics.csv'.format(save_name_pre), index_label='epoch')
         if test_acc_1 > best_acc:
             best_acc = test_acc_1
-            torch.save(model.state_dict(), 'results/{}_model.pth'.format(save_name_pre))
+            torch.save(model.state_dict(), '{}/{}_model_best.pth'.format(output_dir, save_name_pre))
+        
+        # if epoch % args.save_interval == 0:
+        #     torch.save(model.state_dict(), '{}/{}_model_{}.pth'.format(output_dir, save_name_pre, str(epoch)))
