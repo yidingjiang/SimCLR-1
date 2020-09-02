@@ -279,7 +279,7 @@ class SimCLRJacobianModel(nn.Module):
         # projection head
         self.g = nn.Sequential(*proj_layers)
 
-        self.augment = KorniaAugmentationModule() #AugmentationModule()
+        self.augment = KorniaAugmentationModule()
 
     def forward(self, x, jit_params=None, mode='train'):
         if mode == 'train':

@@ -38,7 +38,6 @@ def get_batch_affine_transform_tensors(net, shape, eps=1e-3):
 # get color jitter tensors
 def get_batch_color_jitter_tensors(net, shape, eps=1e-3):
     jit_params = net.augment.jit.generate_parameters(shape)
-
     jit_params_delta = net.augment.jit.generate_parameters(shape)
     for k in jit_params.keys():
         if k is 'order':
@@ -93,25 +92,26 @@ def train(net, data_loader, train_optimizer):
         pos_sim = torch.cat([pos_sim, pos_sim], dim=0)
 
         loss = (-torch.log(pos_sim / sim_matrix.sum(dim=-1))).mean()
-        avg_contr_loss += loss
+        avg_contr_loss += loss.item()
+        
         # compute approximate derivative wrt theta, tx and ty and jitter
         _, out_dtxy1 = net(pos, affine_params_delta1, jit_params1)
         _, out_djitter1 = net(pos, affine_params1, jit_params_delta1)    
 
-        j_dtxy1 = torch.norm((out_dtxy1 - out_1)/ args.eps)
-        j_djitter1 = torch.norm((out_djitter1 - out_1)/args.eps)
+        j_dtxy1 = torch.mean(torch.norm((out_dtxy1 - out_1)/ args.eps, dim=1))
+        j_djitter1 =  torch.mean(torch.norm((out_djitter1 - out_1)/args.eps, dim=1))
 
         # compute approximate derivative wrt theta, tx and ty and jitter
         _, out_dtxy2 = net(pos, affine_params_delta2, jit_params2)
         _, out_djitter2 = net(pos, affine_params2, jit_params_delta2)    
 
-        j_dtxy2 = torch.norm((out_dtxy2 - out_2)/ args.eps)
-        j_djitter2 = torch.norm((out_djitter2 - out_2)/args.eps)
+        j_dtxy2 = torch.mean(torch.norm((out_dtxy2 - out_2)/ args.eps, dim=1))
+        j_djitter2 =  torch.mean(torch.norm((out_djitter2 - out_2)/args.eps, dim=1))
 
-        avg_jtxy += j_dtxy1/args.batch_size + j_dtxy2/args.batch_size
-        avg_jitter += j_djitter1/args.batch_size + j_djitter2/args.batch_size
+        avg_jtxy += (j_dtxy1 + j_dtxy2) * args.batch_size
+        avg_jitter += (j_djitter1 + j_djitter2) * args.batch_size
 
-        grad_loss = (j_dtxy1 + j_djitter1 + j_dtxy2 + j_djitter2)/args.batch_size
+        grad_loss = j_dtxy1 + j_djitter1 + j_dtxy2 + j_djitter2
 
         loss += args.lamda * grad_loss
 
@@ -124,7 +124,7 @@ def train(net, data_loader, train_optimizer):
         total_loss += loss.item() * batch_size
         train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / total_num))
 
-    wandb.log({"txy_norm" : avg_jtxy, "jitter_norm" : avg_jitter, "contr loss": avg_contr_loss})
+    wandb.log({"txy_norm" : avg_jtxy / total_num, "jitter_norm" : avg_jitter / total_num})
     return total_loss / total_num
 
 
