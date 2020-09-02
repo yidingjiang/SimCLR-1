@@ -236,7 +236,7 @@ if __name__ == '__main__':
     if not os.path.exists('results'):
         os.mkdir('results')
     
-    output_dir = 'results/{}'.format(datetime.now().strftime('%Y/%m/%d'))
+    output_dir = 'results/{}'.format(datetime.now().strftime('%Y-%m-%d'))
     os.mkdir(output_dir)
 
     # training loop
