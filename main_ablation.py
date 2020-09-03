@@ -142,7 +142,7 @@ def train(net, data_loader, train_optimizer):
         total_loss += loss.item() * batch_size
         train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / total_num))
 
-    wandb.log({"jitter_norm" : avg_jitter / total_num})
+    wandb.log({"jitter_norm" : avg_jitter / total_num, "contrastive loss" : avg_contr_loss / total_num}})
     return total_loss / total_num
 
 
@@ -289,7 +289,7 @@ if __name__ == '__main__':
     for epoch in range(1, epochs + 1):
         train_loss = train(model, train_loader, optimizer)
         results['train_loss'].append(train_loss)
-        # plot_img = False
+        plot_img = False
         # if (epoch-1) % 20 == 0 or epoch == epochs - 1:
         #     plot_img = True
         test_acc_1, test_acc_5 = test(model, memory_loader, test_loader, epoch, plot_img=plot_img)
