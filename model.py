@@ -129,7 +129,7 @@ class KorniaAugmentationModule(nn.Module):
         self.normalize = K.Normalize(self.mu, self.sigma)
 
     # Note that I should only normalize in test mode; no other type of augmentation should be performed
-    def forward(self, x, aff_params=None, jit_params=None, mode='train', visualize=False, augment_type='orig'):
+    def forward(self, x, params=None, mode='train', visualize=False, augment_type='orig'):
         B = x.shape[0]
 
         if visualize:
@@ -141,15 +141,14 @@ class KorniaAugmentationModule(nn.Module):
             #     x = self.augment(x)
 
             if augment_type == 'orig':
-                assert aff_params is None, "affine params are being passed. Is this an error?"
-                x = self.crop(x)
-                x = self.hor_flip(x)
-                if torch.rand(1) < 0.8:
-                    x = self.jit(x, jit_params)
-                x = self.rand_grayscale(x)
+                x = self.crop(x, params['crop_params'])
+                x = self.hor_flip(x, params['hor_flip_params'])
+                if params['jit_prob'] < 0.8:
+                    x = self.jit(x, params['jit_params'])
+                x = self.rand_grayscale(x, params['grayscale_params'])
             else:
-                x = self.aff(x, aff_params)
-                x = self.jit(x, jit_params)
+                x = self.aff(x, params['aff_params'])
+                x = self.jit(x, params['jit_params'])
 
             if visualize:
                 pil_img_bright = FT.to_pil_image(x[0])
@@ -281,10 +280,10 @@ class SimCLRJacobianModel(nn.Module):
 
         self.augment = KorniaAugmentationModule()
 
-    def forward(self, x, jit_params=None, mode='train'):
+    def forward(self, x, params=None, mode='train'):
         if mode == 'train':
-            assert jit_params is not None
-        x = self.augment(x, aff_params=None, jit_params=jit_params, mode=mode)
+            assert params is not None
+        x = self.augment(x, params=params, mode=mode)
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)

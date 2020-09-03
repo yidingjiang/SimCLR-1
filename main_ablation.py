@@ -17,6 +17,7 @@ import wandb
 import numpy as np
 import matplotlib.pyplot as plt 
 from PIL import Image
+import copy
 
 # get color jitter tensors
 def get_batch_color_jitter_tensors(net, shape, eps=1e-3):
@@ -35,6 +36,43 @@ def get_batch_color_jitter_tensors(net, shape, eps=1e-3):
 
     return  jit_params, jit_params_delta
 
+def get_batch_op_augment_params(op, shape, eps):
+    params = op.generate_parameters(shape)
+    params_delta = op.generate_parameters(shape)
+    if type(params) == dict:
+        for k in params.keys():
+            if params[k].dtype == torch.float64 or params[k].dtype == torch.float32:
+                # if k is 'order':
+                #     params_delta[k] = params[k]
+                # else:
+                params_delta[k] = params[k] + eps
+            else:
+                params_delta[k] = params[k]
+
+        if cuda_available:
+            for k in params.keys():
+                params[k] = params[k].cuda()
+                params_delta[k] = params_delta[k].cuda()
+
+    return  params, params_delta
+
+# get color jitter tensors
+def get_batch_augmentation_params(net, shape, eps=1e-3):
+    params = {}
+    params_delta = {}
+    # Generate params for cropping
+    params['crop_params'], params_delta['crop_params_delta'] = get_batch_op_augment_params(net.augment.crop, shape, eps)
+    # Generate params for horizontal flip
+    params['hor_flip_params'], params_delta['hor_flip_params_delta'] = get_batch_op_augment_params(net.augment.hor_flip, shape, eps)
+    # Generate params for color jitter
+    # Probability of color jitter
+    params['jit_prob'] = torch.rand(1)
+    # parameters for color jitter
+    params['jit_params'], params_delta['jit_params_delta'] = get_batch_op_augment_params(net.augment.jit, shape, eps)
+    # Generate params for random grayscaling
+    params['grayscale_params'], params_delta['grayscale_params_delta'] = get_batch_op_augment_params(net.augment.rand_grayscale, shape, eps)    
+    return params, params_delta
+
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
 
@@ -50,14 +88,16 @@ def train(net, data_loader, train_optimizer):
         if cuda_available:
             pos = pos.cuda(non_blocking=True)
 
-        jit_params1, jit_params_delta1 = get_batch_color_jitter_tensors(net, shape=pos.shape, eps=args.eps)
+        #jit_params1, jit_params_delta1 = get_batch_color_jitter_tensors(net, shape=pos.shape, eps=args.eps)
+        params1, params_delta1 = get_batch_augmentation_params(net, shape=pos.shape, eps=args.eps)
+        # [B, D]
+        feature_1, out_1 = net(pos, params1)
+
+        #jit_params2, jit_params_delta2 = get_batch_color_jitter_tensors(net, shape=pos.shape, eps=args.eps)
+        params2, params_delta2 = get_batch_augmentation_params(net, shape=pos.shape, eps=args.eps)
 
         # [B, D]
-        feature_1, out_1 = net(pos, jit_params1)
-
-        jit_params2, jit_params_delta2 = get_batch_color_jitter_tensors(net, shape=pos.shape, eps=args.eps)
-        # [B, D]
-        feature_2, out_2 = net(pos, jit_params2)
+        feature_2, out_2 = net(pos, params2)
 
          # [2*B, D]
         out = torch.cat([out_1, out_2], dim=0)
@@ -75,12 +115,16 @@ def train(net, data_loader, train_optimizer):
         loss = (-torch.log(pos_sim / sim_matrix.sum(dim=-1))).mean()
         avg_contr_loss += loss.item() * args.batch_size
         
-        # compute approximate derivative wrt theta, tx and ty and jitter
-        _, out_djitter1 = net(pos, jit_params_delta1)   
+        # compute approximate derivative wrt jitter
+        jitter_params1 = copy.deepcopy(params1)
+        jitter_params1['jit_params'] = params_delta1['jit_params_delta']
+        _, out_djitter1 = net(pos, jitter_params1)   
         j_djitter1 = torch.mean(torch.norm((out_djitter1 - out_1)/args.eps, dim=1))
 
-        # compute approximate derivative wrt theta, tx and ty and jitter
-        _, out_djitter2 = net(pos, jit_params_delta2)    
+        # compute approximate derivative wrt jitter
+        jitter_params2 = copy.deepcopy(params2)
+        jitter_params2['jit_params'] = params_delta2['jit_params_delta']
+        _, out_djitter2 = net(pos, jitter_params2) 
         j_djitter2 = torch.mean(torch.norm((out_djitter2 - out_2)/args.eps, dim=1))
 
         avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
@@ -237,7 +281,8 @@ if __name__ == '__main__':
         os.mkdir('results')
     
     output_dir = 'results/{}'.format(datetime.now().strftime('%Y-%m-%d'))
-    os.mkdir(output_dir)
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
 
     # training loop
     best_acc = 0.0
