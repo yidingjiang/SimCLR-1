@@ -36,18 +36,23 @@ def get_batch_color_jitter_tensors(net, shape, eps=1e-3):
 
     return  jit_params, jit_params_delta
 
-def get_batch_op_augment_params(op, shape, eps):
+def get_batch_op_augment_params(op, shape, eps, only_keys=None, clamp_low=0, clamp_hi=31):
     params = op.generate_parameters(shape)
     params_delta = op.generate_parameters(shape)
     if type(params) == dict:
         for k in params.keys():
-            if params[k].dtype == torch.float64 or params[k].dtype == torch.float32:
-                # if k is 'order':
-                #     params_delta[k] = params[k]
-                # else:
+            if only_keys is not None and k in only_keys:
                 params_delta[k] = params[k] + eps
+                #  Needs to be generalized, currently using this for only crop
+                params_delta[k] = params_delta[k].clamp(clamp_low, clamp_hi)
             else:
-                params_delta[k] = params[k]
+                if params[k].dtype == torch.float64 or params[k].dtype == torch.float32:
+                    # if k is 'order':
+                    #     params_delta[k] = params[k]
+                    # else:
+                    params_delta[k] = params[k] + eps
+                else:
+                    params_delta[k] = params[k]
 
         if cuda_available:
             for k in params.keys():
@@ -56,12 +61,42 @@ def get_batch_op_augment_params(op, shape, eps):
 
     return  params, params_delta
 
+def get_batch_op_augment_params_centered(op, shape, eps, only_keys=None, clamp_low=0, clamp_hi=31):
+    params = op.generate_parameters(shape)
+    params_delta_r = op.generate_parameters(shape)
+    params_delta_l = op.generate_parameters(shape)
+    if type(params) == dict:
+        for k in params.keys():
+            if only_keys is not None and k in only_keys:
+                params_delta_r[k] = params[k] + eps
+                params_delta_l[k] = params[k] - eps
+                params_delta_r[k] = params_delta_r[k].clamp(clamp_low, clamp_hi)
+                params_delta_1[k] = params_delta_1[k].clamp(clamp_low, clamp_hi)
+            else:
+                if params[k].dtype == torch.float64 or params[k].dtype == torch.float32:
+                    # if k is 'order':
+                    #     params_delta[k] = params[k]
+                    # else:
+                    params_delta_r[k] = params[k] + eps
+                    params_delta_l[k] = params[k] - eps
+                else:
+                    params_delta_r[k] = params[k]
+                    params_delta_l[k] = params[k]
+
+        if cuda_available:
+            for k in params.keys():
+                params[k] = params[k].cuda()
+                params_delta_r[k] = params_delta_r[k].cuda()
+                params_delta_l[k] = params_delta_l[k].cuda()
+
+    return  params, params_delta_r, params_delta_l
+
 # get color jitter tensors
 def get_batch_augmentation_params(net, shape, eps=1e-3):
     params = {}
     params_delta = {}
     # Generate params for cropping
-    params['crop_params'], params_delta['crop_params_delta'] = get_batch_op_augment_params(net.augment.crop, shape, eps)
+    params['crop_params'], params_delta['crop_params_delta'] = get_batch_op_augment_params(net.augment.crop, shape, eps=1, only_keys=['src'])
     # Generate params for horizontal flip
     params['hor_flip_params'], params_delta['hor_flip_params_delta'] = get_batch_op_augment_params(net.augment.hor_flip, shape, eps)
     # Generate params for color jitter
@@ -73,6 +108,22 @@ def get_batch_augmentation_params(net, shape, eps=1e-3):
     params['grayscale_params'], params_delta['grayscale_params_delta'] = get_batch_op_augment_params(net.augment.rand_grayscale, shape, eps)    
     return params, params_delta
 
+def get_jitter_norm_loss(net, pos, out, params, params_delta, eps):
+    # compute approximate derivative wrt jitter
+    jitter_params = copy.deepcopy(params)
+    jitter_params['jit_params'] = params_delta['jit_params_delta']
+    _, out_djitter = net(pos, jitter_params)   
+    j_djitter = torch.mean(torch.norm((out_djitter - out)/eps, dim=1))
+    return j_djitter
+
+def get_crop_norm_loss(net, pos, out, params, params_delta, eps):
+    # compute approximate derivative wrt jitter
+    crop_params = copy.deepcopy(params)
+    crop_params['crop_params'] = params_delta['crop_params_delta']
+    _, out_dcrop = net(pos, crop_params)   
+    j_dcrop = torch.mean(torch.norm((out_dcrop - out)/eps, dim=1))
+    return j_dcrop
+
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
 
@@ -80,6 +131,7 @@ def train(net, data_loader, train_optimizer):
 
     avg_jtxy = 0.0
     avg_jitter = 0.0
+    avg_crop = 0.0
 
     avg_contr_loss, avg_grad_loss, total_itr = 0, 0, 0
 
@@ -115,21 +167,18 @@ def train(net, data_loader, train_optimizer):
         loss = (-torch.log(pos_sim / sim_matrix.sum(dim=-1))).mean()
         avg_contr_loss += loss.item() * args.batch_size
         
-        # compute approximate derivative wrt jitter
-        jitter_params1 = copy.deepcopy(params1)
-        jitter_params1['jit_params'] = params_delta1['jit_params_delta']
-        _, out_djitter1 = net(pos, jitter_params1)   
-        j_djitter1 = torch.mean(torch.norm((out_djitter1 - out_1)/args.eps, dim=1))
+        grad_loss = 0
+        if args.use_jitter_norm:
+            j_djitter1 = get_jitter_norm_loss(net, pos, out_1, params1, params_delta1, args.eps)
+            j_djitter2 = get_jitter_norm_loss(net, pos, out_2, params2, params_delta2, args.eps)
+            avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
+            grad_loss += (j_djitter1 + j_djitter2)
 
-        # compute approximate derivative wrt jitter
-        jitter_params2 = copy.deepcopy(params2)
-        jitter_params2['jit_params'] = params_delta2['jit_params_delta']
-        _, out_djitter2 = net(pos, jitter_params2) 
-        j_djitter2 = torch.mean(torch.norm((out_djitter2 - out_2)/args.eps, dim=1))
-
-        avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
-
-        grad_loss = (j_djitter1 + j_djitter2)
+        if args.use_crop_norm:
+            j_dcrop1 = get_crop_norm_loss(net, pos, out_1, params1, params_delta1, args.eps)
+            j_dcrop2 = get_crop_norm_loss(net, pos, out_2, params2, params_delta2, args.eps)
+            avg_crop += (j_dcrop1 + j_dcrop2).item() * args.batch_size
+            grad_loss += (j_dcrop1 + j_dcrop2)
 
         loss += args.lamda * grad_loss
 
@@ -142,7 +191,7 @@ def train(net, data_loader, train_optimizer):
         total_loss += loss.item() * batch_size
         train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / total_num))
 
-    wandb.log({"jitter_norm" : avg_jitter / total_num, "contrastive loss" : avg_contr_loss / total_num}})
+    wandb.log({"jitter_norm" : avg_jitter / total_num, "contrastive loss" : avg_contr_loss / total_num, "crop_norm" : avg_crop / total_num})
     return total_loss / total_num
 
 
@@ -230,6 +279,8 @@ if __name__ == '__main__':
     parser.add_argument('--lamda', default=1, type=float, help='weight for jacobian norm')
     parser.add_argument('--exp_name', required=True, type=str, help="name of experiment")
     parser.add_argument('--save_interval', default=25, type=int, help='Number of images in each mini-batch')
+    parser.add_argument('--use_jitter_norm', default=False, type=bool, help='Should we add norm of gradients wrt jitter to loss?')
+    parser.add_argument('--use_crop_norm', default=False, type=bool, help='Should we add norm of gradients wrt jitter to loss?')
 
     # args parse
     args = parser.parse_args()
