@@ -136,13 +136,13 @@ def get_jitter_norm_loss(net, pos, out, params, params_delta, eps):
     j_djitter = torch.mean(torch.norm((out_djitter - out)/eps, dim=1))
     return j_djitter
 
-def get_jitter_norm_loss_centered(net, pos, out, params, params_delta_r, param_delta_l, eps):
+def get_jitter_norm_loss_centered(net, pos, params, params_delta_r, params_delta_l, eps):
     # compute approximate derivative wrt jitter
     jitter_params = copy.deepcopy(params)
     jitter_params['jit_params'] = params_delta_r['jit_params_delta']
     _, out_djitter_r = net(pos, jitter_params)
     jitter_params['jit_params'] = params_delta_l['jit_params_delta']
-    _, out_djitter_r = net(pos, jitter_params)
+    _, out_djitter_l = net(pos, jitter_params)
     j_djitter = torch.mean(torch.norm((out_djitter_r - out_djitter_l)/2*eps, dim=1))
     return j_djitter
 
@@ -229,16 +229,16 @@ def train(net, data_loader, train_optimizer):
                 grad_loss += (j_dcrop1 + j_dcrop2)
 
         elif args.grad_compute_type == 'centered':
+            j_djitter1 = get_jitter_norm_loss_centered(net, pos, params1, params_delta_r1, params_delta_l1, args.eps)
+            j_djitter2 = get_jitter_norm_loss_centered(net, pos, params2, params_delta_r2, params_delta_l2, args.eps)
+            avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
             if args.use_jitter_norm:
-                j_djitter1 = get_jitter_norm_loss_centered(net, pos, params1, params_delta_r1, params_delta_l1, args.eps)
-                j_djitter2 = get_jitter_norm_loss_centered(net, pos, params2, params_delta_r2, params_delta_l2, args.eps)
-                avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
                 grad_loss += (j_djitter1 + j_djitter2)
-
+            
+            j_dcrop1 = get_crop_norm_loss_centered(net, pos, params1, params_delta_r1, params_delta_l1, args.eps)
+            j_dcrop2 = get_crop_norm_loss_centered(net, pos, params2, params_delta_r2, params_delta_l2, args.eps)
+            avg_crop += (j_dcrop1 + j_dcrop2).item() * args.batch_size
             if args.use_crop_norm:
-                j_dcrop1 = get_crop_norm_loss_centered(net, pos, params1, params_delta_r1, params_delta_l1, args.eps)
-                j_dcrop2 = get_crop_norm_loss_centered(net, pos, params2, params_delta_r2, params_delta_l2, args.eps)
-                avg_crop += (j_dcrop1 + j_dcrop2).item() * args.batch_size
                 grad_loss += (j_dcrop1 + j_dcrop2)
         else:
             raise ValueError("Unknown grad compute type {}".format(args.grad_compute_type))
