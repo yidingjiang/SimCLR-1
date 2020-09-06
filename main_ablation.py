@@ -19,6 +19,31 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import copy
 
+def compute_jacobian(inputs, output):
+    """
+    :param inputs: Batch X Size (e.g. Depth X Width X Height)
+    :param output: Batch X Classes
+    :return: jacobian: Batch X Classes X Size
+    """
+    assert inputs.requires_grad
+
+    num_classes = output.size()[1]
+
+    jacobian = torch.zeros(num_classes, *inputs.size())
+    grad_output = torch.zeros(*output.size())
+    if inputs.is_cuda:
+        grad_output = grad_output.cuda()
+        jacobian = jacobian.cuda()
+
+    for i in range(num_classes):
+        zero_gradients(inputs)
+        grad_output.zero_()
+        grad_output[:, i] = 1
+        output.backward(grad_output, retain_graph=True)
+        jacobian[i] = inputs.grad.data
+
+    return torch.transpose(jacobian, dim0=0, dim1=1)
+
 # get color jitter tensors
 def get_batch_color_jitter_tensors(net, shape, eps=1e-3):
     jit_params = net.augment.jit.generate_parameters(shape)
@@ -143,7 +168,7 @@ def get_jitter_norm_loss_centered(net, pos, params, params_delta_r, params_delta
     _, out_djitter_r = net(pos, jitter_params)
     jitter_params['jit_params'] = params_delta_l['jit_params_delta']
     _, out_djitter_l = net(pos, jitter_params)
-    j_djitter = torch.mean(torch.norm((out_djitter_r - out_djitter_l)/2*eps, dim=1))
+    j_djitter = torch.mean(torch.norm((out_djitter_r - out_djitter_l)/(2*eps), dim=1))
     return j_djitter
 
 def get_crop_norm_loss(net, pos, out, params, params_delta, eps):
@@ -161,7 +186,7 @@ def get_crop_norm_loss_centered(net, pos, params, params_delta_r, params_delta_l
     _, out_dcrop_r = net(pos, crop_params)
     crop_params['crop_params'] = params_delta_l['crop_params_delta']
     _, out_dcrop_l = net(pos, crop_params)
-    j_dcrop = torch.mean(torch.norm((out_dcrop_r - out_dcrop_l)/2*eps, dim=1))
+    j_dcrop = torch.mean(torch.norm((out_dcrop_r - out_dcrop_l)/(2*eps), dim=1))
     return j_dcrop
 
 # train for one epoch to learn unique features
@@ -180,7 +205,6 @@ def train(net, data_loader, train_optimizer):
         if cuda_available:
             pos = pos.cuda(non_blocking=True)
 
-        #jit_params1, jit_params_delta1 = get_batch_color_jitter_tensors(net, shape=pos.shape, eps=args.eps)
         if args.grad_compute_type == 'centered':
             params1, params_delta_r1, params_delta_l1 = get_batch_augmentation_centered_params(net, shape=pos.shape, eps=args.eps)
         else:
@@ -189,7 +213,6 @@ def train(net, data_loader, train_optimizer):
         # [B, D]
         feature_1, out_1 = net(pos, params1)
 
-        #jit_params2, jit_params_delta2 = get_batch_color_jitter_tensors(net, shape=pos.shape, eps=args.eps)
         if args.grad_compute_type == 'centered':
             params2, params_delta_r2,  params_delta_l2 = get_batch_augmentation_centered_params(net, shape=pos.shape, eps=args.eps)
         else:
@@ -216,21 +239,22 @@ def train(net, data_loader, train_optimizer):
         
         grad_loss = 0
         if args.grad_compute_type == 'default':
+            j_djitter1 = get_jitter_norm_loss(net, pos, out_1, params1, params_delta1, args.eps)
+            j_djitter2 = get_jitter_norm_loss(net, pos, out_2, params2, params_delta2, args.eps)
+            avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
             if args.use_jitter_norm:
-                j_djitter1 = get_jitter_norm_loss(net, pos, out_1, params1, params_delta1, args.eps)
-                j_djitter2 = get_jitter_norm_loss(net, pos, out_2, params2, params_delta2, args.eps)
-                avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
                 grad_loss += (j_djitter1 + j_djitter2)
 
+            j_dcrop1 = get_crop_norm_loss(net, pos, out_1, params1, params_delta1, args.eps)
+            j_dcrop2 = get_crop_norm_loss(net, pos, out_2, params2, params_delta2, args.eps)
+            avg_crop += (j_dcrop1 + j_dcrop2).item() * args.batch_size
             if args.use_crop_norm:
-                j_dcrop1 = get_crop_norm_loss(net, pos, out_1, params1, params_delta1, args.eps)
-                j_dcrop2 = get_crop_norm_loss(net, pos, out_2, params2, params_delta2, args.eps)
-                avg_crop += (j_dcrop1 + j_dcrop2).item() * args.batch_size
                 grad_loss += (j_dcrop1 + j_dcrop2)
 
         elif args.grad_compute_type == 'centered':
             j_djitter1 = get_jitter_norm_loss_centered(net, pos, params1, params_delta_r1, params_delta_l1, args.eps)
             j_djitter2 = get_jitter_norm_loss_centered(net, pos, params2, params_delta_r2, params_delta_l2, args.eps)
+
             avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
             if args.use_jitter_norm:
                 grad_loss += (j_djitter1 + j_djitter2)
@@ -344,13 +368,16 @@ if __name__ == '__main__':
     parser.add_argument('--save_interval', default=25, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--use_jitter_norm', default=False, type=bool, help='Should we add norm of gradients wrt jitter to loss?')
     parser.add_argument('--use_crop_norm', default=False, type=bool, help='Should we add norm of gradients wrt jitter to loss?')
-    parser.add_argument('--grad_compute_type', default="centered", type=str, help='Should we add norm of gradients wrt jitter to loss?')
-
+    parser.add_argument('--grad_compute_type', default="default", type=str, help='Should we add norm of gradients wrt jitter to loss?')
+    parser.add_argument('--seed', default=0, type=int, help='Number of sweeps over the dataset to train')
     # args parse
     args = parser.parse_args()
     feature_dim, k = args.feature_dim, args.k
     batch_size, epochs = args.batch_size, args.epochs
     temperature = args.temperature
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     if args.use_wandb:
         wandb.init(project="contrastive learning", config=args)
