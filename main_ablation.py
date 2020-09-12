@@ -87,6 +87,7 @@ def get_batch_op_augment_params(op, shape, eps, only_keys=None, clamp_low=0, cla
     return  params, params_delta
 
 def get_batch_op_augment_params_centered(op, shape, eps, only_keys=None, clamp_low=0, clamp_hi=31):
+    import pdb; pdb.set_trace()
     params = op.generate_parameters(shape)
     params_delta_r = op.generate_parameters(shape)
     params_delta_l = op.generate_parameters(shape)
@@ -237,19 +238,18 @@ def train(net, data_loader, train_optimizer):
         loss = (-torch.log(pos_sim / sim_matrix.sum(dim=-1))).mean()
         avg_contr_loss += loss.item() * args.batch_size
         
-        grad_loss = 0
         if args.grad_compute_type == 'default':
             j_djitter1 = get_jitter_norm_loss(net, pos, out_1, params1, params_delta1, args.eps)
             j_djitter2 = get_jitter_norm_loss(net, pos, out_2, params2, params_delta2, args.eps)
             avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
             if args.use_jitter_norm:
-                grad_loss += (j_djitter1 + j_djitter2)
+                loss += args.lamda1 * (j_djitter1 + j_djitter2)
 
             j_dcrop1 = get_crop_norm_loss(net, pos, out_1, params1, params_delta1, args.eps)
             j_dcrop2 = get_crop_norm_loss(net, pos, out_2, params2, params_delta2, args.eps)
             avg_crop += (j_dcrop1 + j_dcrop2).item() * args.batch_size
             if args.use_crop_norm:
-                grad_loss += (j_dcrop1 + j_dcrop2)
+                loss += args.lamda2 * (j_dcrop1 + j_dcrop2)
 
         elif args.grad_compute_type == 'centered':
             j_djitter1 = get_jitter_norm_loss_centered(net, pos, params1, params_delta_r1, params_delta_l1, args.eps)
@@ -257,17 +257,16 @@ def train(net, data_loader, train_optimizer):
 
             avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
             if args.use_jitter_norm:
-                grad_loss += (j_djitter1 + j_djitter2)
+                loss += args.lamda1 * (j_djitter1 + j_djitter2)
             
             j_dcrop1 = get_crop_norm_loss_centered(net, pos, params1, params_delta_r1, params_delta_l1, args.eps)
             j_dcrop2 = get_crop_norm_loss_centered(net, pos, params2, params_delta_r2, params_delta_l2, args.eps)
             avg_crop += (j_dcrop1 + j_dcrop2).item() * args.batch_size
             if args.use_crop_norm:
-                grad_loss += (j_dcrop1 + j_dcrop2)
+                loss += args.lamda2 * (j_dcrop1 + j_dcrop2)
+
         else:
             raise ValueError("Unknown grad compute type {}".format(args.grad_compute_type))
-
-        loss += args.lamda * grad_loss
 
         train_optimizer.zero_grad()
         loss.backward()
@@ -363,13 +362,19 @@ if __name__ == '__main__':
     parser.add_argument('--resnet', default='resnet18', type=str, help='Type of resnet: 1. resnet18, resnet34, resnet50')
     parser.add_argument('--eps', default=1e-4, type=float, help='epsilon to compute jacobian')
     parser.add_argument('--temperature', default=0.5, type=float, help='Temperature used in softmax')
-    parser.add_argument('--lamda', default=1, type=float, help='weight for jacobian norm')
+    
+    parser.add_argument('--lamda1', default=5e-3, type=float, help='weight for jacobian of color jitter')
+    parser.add_argument('--lamda2', default=5e-3, type=float, help='weight for jacobian of crop')
+
     parser.add_argument('--exp_name', required=True, type=str, help="name of experiment")
+    parser.add_argument('--exp_group', default='grid_search', type=str, help='exp_group that can be used to filter results.')
+    
     parser.add_argument('--save_interval', default=25, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--use_jitter_norm', default=False, type=bool, help='Should we add norm of gradients wrt jitter to loss?')
     parser.add_argument('--use_crop_norm', default=False, type=bool, help='Should we add norm of gradients wrt jitter to loss?')
     parser.add_argument('--grad_compute_type', default="default", type=str, help='Should we add norm of gradients wrt jitter to loss?')
     parser.add_argument('--seed', default=0, type=int, help='Number of sweeps over the dataset to train')
+
     # args parse
     args = parser.parse_args()
     feature_dim, k = args.feature_dim, args.k
