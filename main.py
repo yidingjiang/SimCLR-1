@@ -1,5 +1,6 @@
 import argparse
 import os
+from datetime import datetime
 
 import pandas as pd
 import torch
@@ -113,7 +114,8 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
                         axs[label][2 + offset].imshow(all_data[index].cpu().detach().numpy().reshape(32,32,3))
                 
                 fig.savefig('plot.png')
-                wandb.log({"Features of k-NN; k=5": [wandb.Image(Image.open('plot.png'), caption=f"feature @epoch {epoch}")]})
+                if args.use_wandb:
+                    wandb.log({"Features of k-NN; k=5": [wandb.Image(Image.open('plot.png'), caption=f"feature @epoch {epoch}")]})
 
     return total_top1 / total_num * 100, total_top5 / total_num * 100
 
@@ -143,7 +145,8 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    wandb.init(project="contrlearning-gridsearch", config=args)
+    if args.use_wandb:
+        wandb.init(project="contrlearning-gridsearch", config=args)
 
     cuda_available = torch.cuda.is_available()
 
