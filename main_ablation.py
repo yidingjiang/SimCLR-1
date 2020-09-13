@@ -132,7 +132,10 @@ def get_batch_augmentation_centered_params(net, shape, eps=1e-3):
     # parameters for color jitter
     params['jit_params'], params_delta_r['jit_params_delta'], params_delta_l['jit_params_delta'] = get_batch_op_augment_params_centered(
                                                 net.augment.jit, shape, eps)
+                                    
     # Generate params for random grayscaling
+    # Probability of grayscaling
+    params['gs_prob'] = torch.rand(1)
     params['grayscale_params'], params_delta_r['grayscale_params_delta'], params_delta_l['grayscale_params_delta'] = get_batch_op_augment_params_centered(
                                                 net.augment.rand_grayscale, shape, eps)    
     return params, params_delta_r, params_delta_l

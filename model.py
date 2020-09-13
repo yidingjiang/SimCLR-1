@@ -145,7 +145,8 @@ class KorniaAugmentationModule(nn.Module):
                 x = self.hor_flip(x, params['hor_flip_params'])
                 if params['jit_prob'] < 0.8:
                     x = self.jit(x, params['jit_params'])
-                x = self.rand_grayscale(x, params['grayscale_params'])
+                if params['gs_prob'] < 0.2:
+                    x = self.rand_grayscale(x, params['grayscale_params'])
             else:
                 x = self.aff(x, params['aff_params'])
                 x = self.jit(x, params['jit_params'])
