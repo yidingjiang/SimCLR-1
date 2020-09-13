@@ -137,7 +137,7 @@ if __name__ == '__main__':
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
     batch_size, epochs = args.batch_size, args.epochs
     
-    wandb.init(project="contrastive learning", config=args)
+    wandb.init(project="contrlearning-gridsearch", config=args)
 
     cuda_available = torch.cuda.is_available()
 
