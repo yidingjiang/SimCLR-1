@@ -127,14 +127,17 @@ def get_batch_augmentation_centered_params(net, shape, eps=1e-3):
                                                 net.augment.hor_flip, shape, eps)
     # Generate params for color jitter
     # Probability of color jitter
-    params['jit_prob'] = torch.rand(1)
+    params['jit_prob'] = torch.rand(shape[0])
+    params['jit_threshold'] = 0.8
+
+    B = (params['jit_prob'] < params['jit_threshold']).sum()
+    jit_params_shape = (B, 3, 32, 32) # assuming that images are of shape 3, 32, 32
+
     # parameters for color jitter
     params['jit_params'], params_delta_r['jit_params_delta'], params_delta_l['jit_params_delta'] = get_batch_op_augment_params_centered(
-                                                net.augment.jit, shape, eps)
+                                                net.augment.jit, jit_params_shape, eps)
                                     
     # Generate params for random grayscaling
-    # Probability of grayscaling
-    params['gs_prob'] = torch.rand(1)
     params['grayscale_params'], params_delta_r['grayscale_params_delta'], params_delta_l['grayscale_params_delta'] = get_batch_op_augment_params_centered(
                                                 net.augment.rand_grayscale, shape, eps)    
     return params, params_delta_r, params_delta_l
@@ -149,7 +152,13 @@ def get_batch_augmentation_params(net, shape, eps=1e-3):
     params['hor_flip_params'], params_delta['hor_flip_params_delta'] = get_batch_op_augment_params(net.augment.hor_flip, shape, eps)
     # Generate params for color jitter
     # Probability of color jitter
-    params['jit_prob'] = torch.rand(1)
+    # Probability of color jitter
+    params['jit_prob'] = torch.rand(shape[0])
+    params['jit_threshold'] = 0.8
+
+    B = (params['jit_prob'] < params['jit_threshold']).sum()
+    jit_params_shape = (B, 3, 32, 32) # assuming that images are of shape 3, 32, 32
+    
     # parameters for color jitter
     params['jit_params'], params_delta['jit_params_delta'] = get_batch_op_augment_params(net.augment.jit, shape, eps)
     # Generate params for random grayscaling
