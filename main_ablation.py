@@ -87,7 +87,6 @@ def get_batch_op_augment_params(op, shape, eps, only_keys=None, clamp_low=0, cla
     return  params, params_delta
 
 def get_batch_op_augment_params_centered(op, shape, eps, only_keys=None, clamp_low=0, clamp_hi=31):
-    import pdb; pdb.set_trace()
     params = op.generate_parameters(shape)
     params_delta_r = op.generate_parameters(shape)
     params_delta_l = op.generate_parameters(shape)

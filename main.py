@@ -131,11 +131,15 @@ if __name__ == '__main__':
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='learning rate')
     parser.add_argument('--resnet', default='resnet18', type=str, help='Type of resnet: 1. resnet18, resnet34, resnet50')
+    parser.add_argument('--seed', default=0, type=int, help='Number of sweeps over the dataset to train')
 
     # args parse
     args = parser.parse_args()
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
     batch_size, epochs = args.batch_size, args.epochs
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
     
     wandb.init(project="contrlearning-gridsearch", config=args)
 
