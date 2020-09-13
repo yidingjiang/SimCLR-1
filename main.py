@@ -132,7 +132,9 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='learning rate')
     parser.add_argument('--resnet', default='resnet18', type=str, help='Type of resnet: 1. resnet18, resnet34, resnet50')
     parser.add_argument('--seed', default=0, type=int, help='Number of sweeps over the dataset to train')
-
+    parser.add_argument('--exp_name', required=True, type=str, help="name of experiment")
+    parser.add_argument('--exp_group', default='grid_search', type=str, help='exp_group that can be used to filter results.')
+    
     # args parse
     args = parser.parse_args()
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
@@ -140,7 +142,7 @@ if __name__ == '__main__':
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    
+
     wandb.init(project="contrlearning-gridsearch", config=args)
 
     cuda_available = torch.cuda.is_available()
@@ -172,9 +174,13 @@ if __name__ == '__main__':
 
     # training loop
     results = {'train_loss': [], 'test_acc@1': [], 'test_acc@5': []}
-    save_name_pre = '{}_{}_{}_{}_{}'.format(feature_dim, temperature, k, batch_size, epochs)
+    save_name_pre = '{}_{}_{}_{}_{}_{}'.format(args.exp_name, args.model_type, feature_dim, k, batch_size, epochs)
     if not os.path.exists('results'):
         os.mkdir('results')
+    output_dir = 'results/{}'.format(datetime.now().strftime('%Y-%m-%d'))
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+
     print("Starting training")
     best_acc = 0.0
     for epoch in range(1, epochs + 1):
@@ -196,4 +202,4 @@ if __name__ == '__main__':
         data_frame.to_csv('results/{}_statistics.csv'.format(save_name_pre), index_label='epoch')
         if test_acc_1 > best_acc:
             best_acc = test_acc_1
-            torch.save(model.state_dict(), 'results/{}_model.pth'.format(save_name_pre))
+            torch.save(model.state_dict(), '{}/{}_model_best.pth'.format(output_dir, save_name_pre))
