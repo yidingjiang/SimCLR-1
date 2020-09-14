@@ -147,7 +147,7 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
 
     if args.use_wandb:
-        wandb.init(project="contrlearning-gridsearch", config=args)
+        wandb.init(project="contrastive learning", config=args)
 
     cuda_available = torch.cuda.is_available()
 

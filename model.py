@@ -121,11 +121,12 @@ class KorniaAugmentationModule(nn.Module):
 
         self.crop = K.RandomResizedCrop(size=(32, 32))
         self.hor_flip = K.RandomHorizontalFlip(p=0.5)
-        self.aff = K.RandomAffine(360)
         self.jit = K.ColorJitter(0.4, 0.4, 0.4, 0.1)
         self.rand_grayscale =  K.RandomGrayscale(p=0.2)
+        
+        self.aff = K.RandomAffine(360)
 
-        self.jit_prob = 0.8
+        self.jit_threshold = 0.8
         self.normalize = K.Normalize(self.mu, self.sigma)
 
     @torch.no_grad()
@@ -138,18 +139,21 @@ class KorniaAugmentationModule(nn.Module):
             pil_img.show()
 
         if mode == 'train':
-            # Rotation and translation
-            #     x = self.augment(x)
-
             if augment_type == 'orig':
                 x = self.crop(x, params['crop_params'])
                 x = self.hor_flip(x, params['hor_flip_params'])
-                idx = params['jit_prob'] < 0.8
+                idx = params['jit_prob'] < self.jit_threshold
                 x[idx] = self.jit(x[idx], params['jit_params'])
                 x = self.rand_grayscale(x, params['grayscale_params'])
-            else:
+            else augment_type == 'rot-jit'
                 x = self.aff(x, params['aff_params'])
                 x = self.jit(x, params['jit_params'])
+            elif augment_type == 'no_params':
+                x = self.crop(x)
+                x = self.hor_flip(x)
+                idx = params['jit_prob'] < self.jit_threshold
+                x[idx] = self.jit(x[idx])
+                x = self.rand_grayscale(x)
 
             if visualize:
                 pil_img_bright = FT.to_pil_image(x[0])
@@ -235,7 +239,7 @@ class ProposedModel(nn.Module):
 
 
 class SimCLRJacobianModel(nn.Module):
-    def __init__(self, feature_dim=128, norm_type='layer', output_norm='layer', model='resnet18'):
+    def __init__(self, feature_dim=128, model='resnet18'):
         super(SimCLRJacobianModel, self).__init__()
         
         resnet = None 
@@ -248,7 +252,6 @@ class SimCLRJacobianModel(nn.Module):
         else:
             raise ValueError(f"Specified resnet model {model} not supported.")
 
-        self.output_norm = output_norm
         self.f = []
         for name, module in resnet().named_children():
             if name == 'conv1':
@@ -259,25 +262,19 @@ class SimCLRJacobianModel(nn.Module):
         self.f = nn.Sequential(*self.f)
 
         if model == 'resnet18' or model == 'resnet34':
-            proj_layers = [nn.Linear(512, 512, bias=False)]
-        elif model == 'resnet50':
-            proj_layers = [nn.Linear(2048, 512, bias=False)]
+            # projection head
+            self.g = nn.Sequential( nn.Linear(512, 512, bias=False), 
+                                    nn.BatchNorm1d(512),
+                                    nn.ReLU(inplace=True), 
+                                    nn.Linear(512, feature_dim, bias=True))
 
-        if norm_type is not None:
-            if norm_type == 'batch':
-                proj_layers.append(nn.BatchNorm1d(512))
-            elif norm_type == 'layer':
-                proj_layers.append(nn.LayerNorm(512))
-            else:
-                raise ValueError(f"Unknown norm type : {norm_type}")
-        proj_layers.append(nn.ReLU(inplace=True))
-        proj_layers.append(nn.Linear(512, feature_dim, bias=True))
+        else:
+            # projection head
+            self.g = nn.Sequential( nn.Linear(2048, 512, bias=False), 
+                                    nn.BatchNorm1d(512),
+                                    nn.ReLU(inplace=True), 
+                                    nn.Linear(512, feature_dim, bias=True))
 
-        if output_norm is not None:
-            if output_norm == 'layer':
-                proj_layers.append(nn.LayerNorm(feature_dim))
-        # projection head
-        self.g = nn.Sequential(*proj_layers)
 
         self.augment = KorniaAugmentationModule()
 

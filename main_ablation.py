@@ -214,7 +214,7 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
 
     if args.use_wandb:
-        wandb.init(project="contrlearning-gridsearch", config=args)
+        wandb.init(project="contrastive learning", config=args)
 
     cuda_available = torch.cuda.is_available()
     print("Preparing data...")
@@ -238,7 +238,7 @@ if __name__ == '__main__':
     
     print("Data prepared. Now initializing out Model...")
     # model setup and optimizer config
-    model = SimCLRJacobianModel(feature_dim=feature_dim, norm_type=args.norm_type, output_norm=args.output_norm, model=args.resnet)
+    model = SimCLRJacobianModel(feature_dim=feature_dim, model=args.resnet)
     inputs = torch.randn(1, 3, 32, 32)
 
     if cuda_available:
