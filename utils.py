@@ -1,68 +1,183 @@
-from PIL import Image
-from torchvision import transforms
-from torchvision.datasets import CIFAR10
+import torch
+import copy
 
-class CIFAR10Pair(CIFAR10):
-    """CIFAR10 Dataset.
+cuda_available = torch.cuda.is_available()
+
+def compute_jacobian(inputs, output):
     """
-
-    def __getitem__(self, index):
-        img, target = self.data[index], self.targets[index]
-        img = Image.fromarray(img)
-
-        if self.transform is not None:
-            pos_1 = self.transform(img)
-            pos_2 = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return pos_1, pos_2, target
-
-class CIFAR10Data(CIFAR10):
-    """CIFAR10 Dataset.
+    :param inputs: Batch X Size (e.g. Depth X Width X Height)
+    :param output: Batch X Classes
+    :return: jacobian: Batch X Classes X Size
     """
-    # def __init__(self):
-    #     super(CIFAR10Data, self).__init__()
-    #     # create a dictionar
+    assert inputs.requires_grad
 
-    def __getitem__(self, index):
-        img, target = self.data[index], self.targets[index]
-        img = Image.fromarray(img)
-        # img.save(f"Image_{index}.jpg")
+    num_classes = output.size()[1]
 
-        if self.transform is not None:
-            pos = self.transform(img)
+    jacobian = torch.zeros(num_classes, *inputs.size())
+    grad_output = torch.zeros(*output.size())
+    if inputs.is_cuda:
+        grad_output = grad_output.cuda()
+        jacobian = jacobian.cuda()
 
-        if self.target_transform is not None:
-            target = self.target_transform(target)
+    for i in range(num_classes):
+        zero_gradients(inputs)
+        grad_output.zero_()
+        grad_output[:, i] = 1
+        output.backward(grad_output, retain_graph=True)
+        jacobian[i] = inputs.grad.data
 
-        if self.transform is not None:
-            return pos, target
+    return torch.transpose(jacobian, dim0=0, dim1=1)
 
-        return img, target
+# get color jitter tensors
+def get_batch_color_jitter_tensors(net, shape, eps=1e-3):
+    jit_params = net.augment.jit.generate_parameters(shape)
+    jit_params_delta = net.augment.jit.generate_parameters(shape)
+    for k in jit_params.keys():
+        if k is 'order':
+            jit_params_delta[k] = jit_params[k]
+        else:
+            jit_params_delta[k] = jit_params[k] + eps
 
-train_transform = transforms.Compose([
-    transforms.RandomResizedCrop(32),
-    transforms.RandomHorizontalFlip(p=0.5),
-    transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-    transforms.RandomGrayscale(p=0.2),
-    transforms.ToTensor(),
-    transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
-    ])
+    if cuda_available:
+        for k in jit_params.keys():
+            jit_params[k] = jit_params[k].cuda()
+            jit_params_delta[k] = jit_params_delta[k].cuda()
 
-train_normalize_transform = transforms.Compose([
-    transforms.ToTensor(),
-    #transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
-])
+    return  jit_params, jit_params_delta
 
-test_orig_transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
-])
+def get_batch_op_augment_params(op, shape, eps, only_keys=None, clamp_low=0, clamp_hi=31):
+    params = op.generate_parameters(shape)
+    params_delta = op.generate_parameters(shape)
+    if type(params) == dict:
+        for k in params.keys():
+            if only_keys is not None and k in only_keys:
+                params_delta[k] = params[k] + eps
+                #  Needs to be generalized, currently using this for only crop
+                params_delta[k] = params_delta[k].clamp(clamp_low, clamp_hi)
+            else:
+                if params[k].dtype == torch.float64 or params[k].dtype == torch.float32:
+                    # if k is 'order':
+                    #     params_delta[k] = params[k]
+                    # else:
+                    params_delta[k] = params[k] + eps
+                else:
+                    params_delta[k] = params[k]
 
-# Proposed model uses differentiable normalization - no need to normalize here
-test_transform = transforms.Compose([
-    transforms.ToTensor(),
-    #transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
-])
+        if cuda_available:
+            for k in params.keys():
+                params[k] = params[k].cuda()
+                params_delta[k] = params_delta[k].cuda()
+
+    return  params, params_delta
+
+def get_batch_op_augment_params_centered(op, shape, eps, only_keys=None, clamp_low=0, clamp_hi=31):
+    params = op.generate_parameters(shape)
+    params_delta_r = op.generate_parameters(shape)
+    params_delta_l = op.generate_parameters(shape)
+    if type(params) == dict:
+        for k in params.keys():
+            if only_keys is not None and k in only_keys:
+                params_delta_r[k] = params[k] + eps
+                params_delta_l[k] = params[k] - eps
+                params_delta_r[k] = params_delta_r[k].clamp(clamp_low, clamp_hi)
+                params_delta_l[k] = params_delta_l[k].clamp(clamp_low, clamp_hi)
+            else:
+                if params[k].dtype == torch.float64 or params[k].dtype == torch.float32:
+                    params_delta_r[k] = params[k] + eps
+                    params_delta_l[k] = params[k] - eps
+                else:
+                    params_delta_r[k] = params[k]
+                    params_delta_l[k] = params[k]
+
+        if cuda_available:
+            for k in params.keys():
+                params[k] = params[k].cuda()
+                params_delta_r[k] = params_delta_r[k].cuda()
+                params_delta_l[k] = params_delta_l[k].cuda()
+
+    return  params, params_delta_r, params_delta_l
+
+def get_batch_augmentation_centered_params(net, shape, eps=1e-3):
+    params = {}
+    params_delta_r, params_delta_l = {}, {}
+    # Generate params for cropping
+    params['crop_params'], params_delta_r['crop_params_delta'], params_delta_l['crop_params_delta'] = get_batch_op_augment_params_centered(
+                                                net.augment.crop, shape, eps=1, only_keys=['src'])
+    # Generate params for horizontal flip
+    params['hor_flip_params'], params_delta_r['hor_flip_params_delta'], params_delta_l['hor_flip_params_delta'] = get_batch_op_augment_params_centered(
+                                                net.augment.hor_flip, shape, eps)
+    # Generate params for color jitter
+    # Probability of color jitter
+    params['jit_prob'] = torch.rand(shape[0])
+    params['jit_threshold'] = 0.8
+
+    B = (params['jit_prob'] < params['jit_threshold']).sum()
+    jit_params_shape = (B, 3, 32, 32) # assuming that images are of shape 3, 32, 32
+
+    # parameters for color jitter
+    params['jit_params'], params_delta_r['jit_params_delta'], params_delta_l['jit_params_delta'] = get_batch_op_augment_params_centered(
+                                                net.augment.jit, jit_params_shape, eps)
+                                    
+    # Generate params for random grayscaling
+    params['grayscale_params'], params_delta_r['grayscale_params_delta'], params_delta_l['grayscale_params_delta'] = get_batch_op_augment_params_centered(
+                                                net.augment.rand_grayscale, shape, eps)    
+    return params, params_delta_r, params_delta_l
+
+# get color jitter tensors
+def get_batch_augmentation_params(net, shape, eps=1e-3):
+    params = {}
+    params_delta = {}
+    # Generate params for cropping
+    params['crop_params'], params_delta['crop_params_delta'] = get_batch_op_augment_params(net.augment.crop, shape, eps=1, only_keys=['src'])
+    # Generate params for horizontal flip
+    params['hor_flip_params'], params_delta['hor_flip_params_delta'] = get_batch_op_augment_params(net.augment.hor_flip, shape, eps)
+    # Generate params for color jitter
+    # Probability of color jitter
+    # Probability of color jitter
+    params['jit_prob'] = torch.rand(shape[0])
+    params['jit_threshold'] = 0.8
+
+    B = (params['jit_prob'] < params['jit_threshold']).sum()
+    jit_params_shape = (B, 3, 32, 32) # assuming that images are of shape 3, 32, 32
+
+    # parameters for color jitter
+    params['jit_params'], params_delta['jit_params_delta'] = get_batch_op_augment_params(net.augment.jit, jit_params_shape, eps)
+    # Generate params for random grayscaling
+    params['grayscale_params'], params_delta['grayscale_params_delta'] = get_batch_op_augment_params(net.augment.rand_grayscale, shape, eps)    
+    return params, params_delta
+
+def get_jitter_norm_loss(net, pos, out, params, params_delta, eps):
+    # compute approximate derivative wrt jitter
+    jitter_params = copy.deepcopy(params)
+    jitter_params['jit_params'] = params_delta['jit_params_delta']
+    _, out_djitter = net(pos, jitter_params)   
+    j_djitter = torch.mean(torch.norm((out_djitter - out)/eps, dim=1))
+    return j_djitter
+
+def get_jitter_norm_loss_centered(net, pos, params, params_delta_r, params_delta_l, eps):
+    # compute approximate derivative wrt jitter
+    jitter_params = copy.deepcopy(params)
+    jitter_params['jit_params'] = params_delta_r['jit_params_delta']
+    _, out_djitter_r = net(pos, jitter_params)
+    jitter_params['jit_params'] = params_delta_l['jit_params_delta']
+    _, out_djitter_l = net(pos, jitter_params)
+    j_djitter = torch.mean(torch.norm((out_djitter_r - out_djitter_l)/(2*eps), dim=1))
+    return j_djitter
+
+def get_crop_norm_loss(net, pos, out, params, params_delta, eps):
+    # compute approximate derivative wrt crop params
+    crop_params = copy.deepcopy(params)
+    crop_params['crop_params'] = params_delta['crop_params_delta']
+    _, out_dcrop = net(pos, crop_params)   
+    j_dcrop = torch.mean(torch.norm((out_dcrop - out)/eps, dim=1))
+    return j_dcrop
+
+def get_crop_norm_loss_centered(net, pos, params, params_delta_r, params_delta_l, eps):
+    # compute approximate derivative wrt crop params
+    crop_params = copy.deepcopy(params)
+    crop_params['crop_params'] = params_delta_r['crop_params_delta']
+    _, out_dcrop_r = net(pos, crop_params)
+    crop_params['crop_params'] = params_delta_l['crop_params_delta']
+    _, out_dcrop_l = net(pos, crop_params)
+    j_dcrop = torch.mean(torch.norm((out_dcrop_r - out_dcrop_l)/(2*eps), dim=1))
+    return j_dcrop

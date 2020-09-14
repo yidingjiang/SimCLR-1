@@ -50,7 +50,7 @@ class OriginalModel(nn.Module):
         out = self.g(feature)
         return F.normalize(feature, dim=-1), F.normalize(out, dim=-1)
 
-# differentiable image augmentation module
+# differentiable image augmentation module - affine + jitter
 torch_pi = torch.acos(torch.zeros(1)).item() * 2
 class AugmentationModule(nn.Module):
     def __init__(self, batch_size=512):
@@ -128,6 +128,7 @@ class KorniaAugmentationModule(nn.Module):
         self.jit_prob = 0.8
         self.normalize = K.Normalize(self.mu, self.sigma)
 
+    @torch.no_grad()
     # Note that I should only normalize in test mode; no other type of augmentation should be performed
     def forward(self, x, params=None, mode='train', visualize=False, augment_type='orig'):
         B = x.shape[0]

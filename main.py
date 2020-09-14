@@ -9,7 +9,8 @@ from thop import profile, clever_format
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import utils
+import dataloader
+from utils import *
 from model import OriginalModel
 import wandb
 import numpy as np
@@ -153,12 +154,12 @@ if __name__ == '__main__':
     print("Preparing data...")
 
     # data prepare
-    train_data = utils.CIFAR10Pair(root='data', train=True, transform=utils.train_transform, download=True)
+    train_data = dataloader.CIFAR10Pair(root='data', train=True, transform=dataloader.train_transform, download=True)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True,
                             drop_last=True)
-    memory_data = utils.CIFAR10Pair(root='data', train=True, transform=utils.test_orig_transform, download=True)
+    memory_data = dataloader.CIFAR10Pair(root='data', train=True, transform=dataloader.test_orig_transform, download=True)
     memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
-    test_data = utils.CIFAR10Pair(root='data', train=False, transform=utils.test_orig_transform, download=True)
+    test_data = dataloader.CIFAR10Pair(root='data', train=False, transform=dataloader.test_orig_transform, download=True)
     test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
     print("Data prepared. Now initializing out Model...")
