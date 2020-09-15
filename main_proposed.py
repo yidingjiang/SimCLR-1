@@ -50,24 +50,8 @@ def compute_jacobian_norm(inputs, output):
     :return: jacobian: Batch X Classes X Size
     """
     assert inputs.requires_grad
-
-    num_classes = output.size()[1]
-    
-    jacobian_norm = 0.0
-
-    grad_output = torch.zeros(*output.size())
-    if cuda_available:
-        inputs = inputs.cuda()
-        grad_output = grad_output.cuda()
-
-    for i in range(num_classes):
-        zero_gradients(inputs)
-        grad_output.zero_()
-        grad_output[:, i] = 1
-        output.backward(grad_output, retain_graph=True)
-        jacobian_norm += torch.norm(inputs.grad.data)**2
-
-    return torch.sqrt(jacobian_norm/inputs.shape[0])
+    jacobian = compute_jacobian(inputs, output)
+    return torch.mean(torch.norm(jacobian, dim=1))
 
 # def get_affine_transform_tensors(batch_size):
 #     torch_pi = torch.acos(torch.zeros(1)).item() * 2
@@ -249,10 +233,10 @@ def train(net, data_loader, train_optimizer):
         _, out_dty = net(pos, delta_dict['r_dty'], brightness)
         _, out_djitter = net(pos, rot_mat, brightness_delta)
 
-        j_dtheta = torch.norm((out_dtheta - out)/ eps)
-        j_dtx = torch.norm((out_dtx - out)/ eps)
-        j_dty = torch.norm((out_dty - out)/ eps)
-        j_djitter = torch.norm((out_djitter - out)/eps)
+        j_dtheta = torch.mean(torch.norm((out_dtheta - out)/ eps, dim=1))
+        j_dtx   = torch.mean(torch.norm((out_dtx - out)/ eps, dim=1))
+        j_dty   = torch.mean(torch.norm((out_dty - out)/ eps, dim=1))
+        j_djitter = torch.mean(torch.norm((out_djitter - out)/eps, dim=1))
         
         avg_jtheta += j_dtheta.item()/args.batch_size
         avg_jtx += j_dtx.item()/args.batch_size
@@ -353,7 +337,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train SimCLR')
     parser.add_argument('--feature_dim', default=128, type=int, help='Feature dim for latent vector')
     parser.add_argument('--k', default=200, type=int, help='Top k most similar images used to predict the label')
-    parser.add_argument('--batch_size', default=128, type=int, help='Number of images in each mini-batch')
+    parser.add_argument('--batch_size', default=4, type=int, help='Number of images in each mini-batch')
     parser.add_argument('--epochs', default=150, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--model_type', default='proposed', type=str, help='Type of model to train - original SimCLR (original) or Proposed (proposed)')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')

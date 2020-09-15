@@ -154,7 +154,7 @@ if __name__ == '__main__':
     print("Preparing data...")
 
     # data prepare
-    train_data = dataloader.CIFAR10Pair(root='data', train=True, transform=dataloader.train_transform, download=True)
+    train_data = dataloader.CIFAR10Pair(root='data', train=True, transform=dataloader.train_orig_transform, download=True)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True,
                             drop_last=True)
     memory_data = dataloader.CIFAR10Pair(root='data', train=True, transform=dataloader.test_orig_transform, download=True)

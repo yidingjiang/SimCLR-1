@@ -6,6 +6,7 @@ from torchvision.models.resnet import resnet50, resnet34, resnet18
 import torchvision
 import torchvision.transforms.functional as FT
 import numpy as np
+import kornia.augmentation as K
 
 class OriginalModel(nn.Module):
     def __init__(self, feature_dim=128, model='resnet18'):
@@ -105,7 +106,6 @@ class AugmentationModule(nn.Module):
 
         return x
 
-import kornia.augmentation as K
 class KorniaAugmentationModule(nn.Module):
     def __init__(self, batch_size=512):
         super().__init__()
@@ -145,7 +145,7 @@ class KorniaAugmentationModule(nn.Module):
                 idx = params['jit_prob'] < self.jit_threshold
                 x[idx] = self.jit(x[idx], params['jit_params'])
                 x = self.rand_grayscale(x, params['grayscale_params'])
-            else augment_type == 'rot-jit'
+            else augment_type == 'rot-jit':
                 x = self.aff(x, params['aff_params'])
                 x = self.jit(x, params['jit_params'])
             elif augment_type == 'no_params':
