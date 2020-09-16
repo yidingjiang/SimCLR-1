@@ -115,18 +115,20 @@ class KorniaAugmentationModule(nn.Module):
         self.augment = nn.Sequential(
             K.RandomResizedCrop(size=(32, 32)),
             K.RandomHorizontalFlip(p=0.5),
-            K.ColorJitter(0.4, 0.4, 0.4, 0.1),
+            K.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.8),
             K.RandomGrayscale(p=0.2)
         )
 
-        self.crop = K.RandomResizedCrop(size=(32, 32))
-        self.hor_flip = K.RandomHorizontalFlip(p=0.5)
-        self.jit = K.ColorJitter(0.4, 0.4, 0.4, 0.1)
-        self.rand_grayscale =  K.RandomGrayscale(p=0.2)
+        self.hor_flip_prob = 0.5
+        self.jit_prob = 0.8
+        self.gs_prob = 0.2
+
+        self.crop = K.RandomResizedCrop(size=(32, 32), same_on_batch=False)
+        self.hor_flip = K.RandomHorizontalFlip(p=self.hor_flip_prob, same_on_batch=False)
+        self.jit = K.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=self.jit_prob, same_on_batch=False)
+        self.rand_grayscale =  K.RandomGrayscale(p=self.gs_prob, same_on_batch=False)
         
         self.aff = K.RandomAffine(360)
-
-        self.jit_threshold = 0.8
         self.normalize = K.Normalize(self.mu, self.sigma)
 
     @torch.no_grad()
@@ -142,17 +144,17 @@ class KorniaAugmentationModule(nn.Module):
             if augment_type == 'orig':
                 x = self.crop(x, params['crop_params'])
                 x = self.hor_flip(x, params['hor_flip_params'])
-                idx = params['jit_prob'] < self.jit_threshold
-                x[idx] = self.jit(x[idx], params['jit_params'])
+                x = self.jit(x, params['jit_params'])
                 x = self.rand_grayscale(x, params['grayscale_params'])
-            else augment_type == 'rot-jit':
+
+            elif augment_type == 'rot-jit':
                 x = self.aff(x, params['aff_params'])
                 x = self.jit(x, params['jit_params'])
+
             elif augment_type == 'no_params':
                 x = self.crop(x)
                 x = self.hor_flip(x)
-                idx = params['jit_prob'] < self.jit_threshold
-                x[idx] = self.jit(x[idx])
+                x = self.jit(x)
                 x = self.rand_grayscale(x)
 
             if visualize:
@@ -160,13 +162,6 @@ class KorniaAugmentationModule(nn.Module):
                 pil_img_bright.show()
 
         x = self.normalize(x)
-        #  Normalize from scratch - implementing this because inbuilt normalize doesn't seem to support batch normalization
-        # mean = self.mu.repeat(B, 1, 1, 1).view(B, 3, 1, 1)
-        # std = self.sigma.repeat(B, 1, 1 ,1).view(B, 3, 1, 1)
-        # if torch.cuda.is_available():
-        #     mean = mean.cuda()
-        #     std = std.cuda()
-        # x_norm = (x - mean)/std
         
         # Used to check if normalization above gives same value as inbuilt normalization
         # x_test = torch.zeros_like(x)
@@ -285,9 +280,6 @@ class SimCLRJacobianModel(nn.Module):
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)
-        if self.output_norm is None:
-            return F.normalize(feature, dim=-1), F.normalize(out, dim=-1)
-        # else we are getting normalized output from projection head
-        return F.normalize(feature, dim=-1), out
+        return F.normalize(feature, dim=-1), F.normalize(out, dim=-1)
 
 

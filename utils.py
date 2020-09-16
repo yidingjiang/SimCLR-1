@@ -46,6 +46,7 @@ def get_batch_color_jitter_tensors(net, shape, eps=1e-3):
     return  jit_params, jit_params_delta
 
 def get_batch_op_augment_params(op, shape, eps, only_keys=None, clamp_low=0, clamp_hi=31):
+    #import pdb; pdb.set_trace()
     params = op.generate_parameters(shape)
     params_delta = op.generate_parameters(shape)
     if type(params) == dict:
@@ -103,24 +104,28 @@ def get_batch_augmentation_centered_params(net, shape, eps=1e-3):
     # Generate params for cropping
     params['crop_params'], params_delta_r['crop_params_delta'], params_delta_l['crop_params_delta'] = get_batch_op_augment_params_centered(
                                                 net.augment.crop, shape, eps=1, only_keys=['src'])
+
     # Generate params for horizontal flip
     params['hor_flip_params'], params_delta_r['hor_flip_params_delta'], params_delta_l['hor_flip_params_delta'] = get_batch_op_augment_params_centered(
                                                 net.augment.hor_flip, shape, eps)
+    hor_flip_probs = torch.rand(shape[0])
+    params['hor_flip_params']['batch_prob'] = hor_flip_probs < net.augment.hor_flip_prob
+
     # Generate params for color jitter
-    # Probability of color jitter
-    params['jit_prob'] = torch.rand(shape[0])
-    params['jit_threshold'] = 0.8
-
-    B = (params['jit_prob'] < params['jit_threshold']).sum()
-    jit_params_shape = (B, 3, 32, 32) # assuming that images are of shape 3, 32, 32
-
-    # parameters for color jitter
+    jit_probs = torch.rand(shape[0])
+    B = (jit_probs < net.augment.jit_prob).sum()
+    jit_probs_shape = (B, 3, 32, 32)
     params['jit_params'], params_delta_r['jit_params_delta'], params_delta_l['jit_params_delta'] = get_batch_op_augment_params_centered(
-                                                net.augment.jit, jit_params_shape, eps)
-                                    
+                                                net.augment.jit, jit_probs_shape, eps)
+    params['jit_params']['batch_prob'] = jit_probs < net.augment.jit_prob
+
+                                
     # Generate params for random grayscaling
     params['grayscale_params'], params_delta_r['grayscale_params_delta'], params_delta_l['grayscale_params_delta'] = get_batch_op_augment_params_centered(
-                                                net.augment.rand_grayscale, shape, eps)    
+                                                net.augment.rand_grayscale, shape, eps)
+    gs_probs = torch.rand(shape[0])
+    params['grayscale_params']['batch_prob'] = gs_probs < net.augment.gs_prob
+
     return params, params_delta_r, params_delta_l
 
 # get color jitter tensors
@@ -129,21 +134,24 @@ def get_batch_augmentation_params(net, shape, eps=1e-3):
     params_delta = {}
     # Generate params for cropping
     params['crop_params'], params_delta['crop_params_delta'] = get_batch_op_augment_params(net.augment.crop, shape, eps=1, only_keys=['src'])
+    
     # Generate params for horizontal flip
     params['hor_flip_params'], params_delta['hor_flip_params_delta'] = get_batch_op_augment_params(net.augment.hor_flip, shape, eps)
+    hor_flip_probs = torch.rand(shape[0])
+    params['hor_flip_params']['batch_prob'] = hor_flip_probs < net.augment.hor_flip_prob
+
     # Generate params for color jitter
-    # Probability of color jitter
-    # Probability of color jitter
-    params['jit_prob'] = torch.rand(shape[0])
-    params['jit_threshold'] = 0.8
-
-    B = (params['jit_prob'] < params['jit_threshold']).sum()
-    jit_params_shape = (B, 3, 32, 32) # assuming that images are of shape 3, 32, 32
-
     # parameters for color jitter
-    params['jit_params'], params_delta['jit_params_delta'] = get_batch_op_augment_params(net.augment.jit, jit_params_shape, eps)
+    jit_probs = torch.rand(shape[0])
+    B = (jit_probs < net.augment.jit_prob).sum()
+    jit_probs_shape = (B, 3, 32, 32)
+    params['jit_params'], params_delta['jit_params_delta'] = get_batch_op_augment_params(net.augment.jit, jit_probs_shape, eps)
+    params['jit_params']['batch_prob'] = jit_probs < net.augment.jit_prob
+
     # Generate params for random grayscaling
-    params['grayscale_params'], params_delta['grayscale_params_delta'] = get_batch_op_augment_params(net.augment.rand_grayscale, shape, eps)    
+    params['grayscale_params'], params_delta['grayscale_params_delta'] = get_batch_op_augment_params(net.augment.rand_grayscale, shape, eps)
+    gs_probs = torch.rand(shape[0])
+    params['grayscale_params']['batch_prob'] = gs_probs < net.augment.gs_prob  
     return params, params_delta
 
 def get_jitter_norm_loss(net, pos, out, params, params_delta, eps):
