@@ -39,17 +39,17 @@ def train(net, data_loader, train_optimizer):
             pos_1, pos_2 = pos_1.cuda(non_blocking=True), pos_2.cuda(non_blocking=True)
 
         params1, params2 = None, None
-        if args.model_type == 'proposed' and args.grad_compute_type == 'centered':
+        if args.use_augment and args.grad_compute_type == 'centered':
             params1, params_delta_r1, params_delta_l1 = get_batch_augmentation_centered_params(net, shape=pos_1.shape, eps=args.eps)
-        elif args.model_type == 'proposed' and args.grad_compute_type == 'default':
+        elif args.use_augment and args.grad_compute_type == 'default':
             params1, params_delta1 = get_batch_augmentation_params(net, shape=pos_1.shape, eps=args.eps)
         
         # [B, D]
         feature_1, out_1 = net(pos_1, params=params1, model_type=args.model_type)
 
-        if args.model_type == 'proposed' and args.grad_compute_type == 'centered':
+        if args.use_augment and args.grad_compute_type == 'centered':
             params2, params_delta_r2,  params_delta_l2 = get_batch_augmentation_centered_params(net, shape=pos_2.shape, eps=args.eps)
-        elif args.model_type == 'proposed' and args.grad_compute_type == 'default':
+        elif args.use_augment and args.grad_compute_type == 'default':
             params2, params_delta2 = get_batch_augmentation_params(net, shape=pos_2.shape, eps=args.eps)
 
         # [B, D]
@@ -225,8 +225,8 @@ if __name__ == '__main__':
     cuda_available = torch.cuda.is_available()
     print("Preparing data...")
 
-    train_transform = dataloader.train_transform if args.model_type == 'proposed' else dataloader.train_orig_transform
-    test_transform = dataloader.test_transform if args.model_type == 'proposed' else dataloader.test_orig_transform
+    train_transform = dataloader.train_orig_transform if args.use_augment else dataloader.train_transform
+    test_transform = dataloader.test_orig_transform if  args.use_augment else dataloader.test_transform
 
     # data prepare
     train_data = dataloader.CIFAR10Pair(root='data', train=True,
