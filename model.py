@@ -275,14 +275,14 @@ class SimCLRJacobianModel(nn.Module):
         if self.use_augment:
             self.augment = KorniaAugmentationModule()
 
-    def forward(self, x, params=None, mode='train', model_type='proposed'):
+    def forward(self, x, params=None, mode='train'):
 
-        if mode == 'train' and model_type=='proposed':
+        if mode == 'train' and self.use_augment:
             assert params is not None
 
         if self.use_augment:
             x = self.augment(x, params=params, mode=mode)
-            
+
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)

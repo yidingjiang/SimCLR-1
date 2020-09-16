@@ -45,7 +45,7 @@ def train(net, data_loader, train_optimizer):
             params1, params_delta1 = get_batch_augmentation_params(net, shape=pos_1.shape, eps=args.eps)
         
         # [B, D]
-        feature_1, out_1 = net(pos_1, params=params1, model_type=args.model_type)
+        feature_1, out_1 = net(pos_1, params=params1)
 
         if args.use_augment and args.grad_compute_type == 'centered':
             params2, params_delta_r2,  params_delta_l2 = get_batch_augmentation_centered_params(net, shape=pos_2.shape, eps=args.eps)
@@ -53,7 +53,7 @@ def train(net, data_loader, train_optimizer):
             params2, params_delta2 = get_batch_augmentation_params(net, shape=pos_2.shape, eps=args.eps)
 
         # [B, D]
-        feature_2, out_2 = net(pos_2, params=params2, model_type=args.model_type)
+        feature_2, out_2 = net(pos_2, params=params2)
 
          # [2*B, D]
         out = torch.cat([out_1, out_2], dim=0)
