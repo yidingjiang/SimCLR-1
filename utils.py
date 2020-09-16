@@ -189,3 +189,13 @@ def get_crop_norm_loss_centered(net, pos, params, params_delta_r, params_delta_l
     _, out_dcrop_l = net(pos, crop_params)
     j_dcrop = torch.mean(torch.norm((out_dcrop_r - out_dcrop_l)/(2*eps), dim=1))
     return j_dcrop
+
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
