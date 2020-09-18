@@ -144,7 +144,7 @@ class KorniaAugmentationModule(nn.Module):
             if augment_type == 'orig':
                 x = self.crop(x, params['crop_params'])
                 x = self.hor_flip(x, params['hor_flip_params'])
-                x = self.jit(x, params['jit_params'])
+                x[params['jit_batch_probs']] = self.jit(x[params['jit_batch_probs']], params['jit_params'])
                 x = self.rand_grayscale(x, params['grayscale_params'])
 
             elif augment_type == 'rot-jit':

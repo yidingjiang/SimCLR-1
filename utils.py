@@ -117,7 +117,7 @@ def get_batch_augmentation_centered_params(net, shape, eps=1e-3):
     jit_probs_shape = (B, 3, 32, 32)
     params['jit_params'], params_delta_r['jit_params_delta'], params_delta_l['jit_params_delta'] = get_batch_op_augment_params_centered(
                                                 net.augment.jit, jit_probs_shape, eps)
-    params['jit_params']['batch_prob'] = jit_probs < net.augment.jit_prob
+    params['jit_batch_probs'] = jit_probs < net.augment.jit_prob
 
                                 
     # Generate params for random grayscaling
@@ -146,7 +146,7 @@ def get_batch_augmentation_params(net, shape, eps=1e-3):
     B = (jit_probs < net.augment.jit_prob).sum()
     jit_probs_shape = (B, 3, 32, 32)
     params['jit_params'], params_delta['jit_params_delta'] = get_batch_op_augment_params(net.augment.jit, jit_probs_shape, eps)
-    params['jit_params']['batch_prob'] = jit_probs < net.augment.jit_prob
+    params['jit_batch_probs'] = jit_probs < net.augment.jit_prob
 
     # Generate params for random grayscaling
     params['grayscale_params'], params_delta['grayscale_params_delta'] = get_batch_op_augment_params(net.augment.rand_grayscale, shape, eps)
