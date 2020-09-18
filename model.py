@@ -234,10 +234,8 @@ class ProposedModel(nn.Module):
 
 
 class SimCLRJacobianModel(nn.Module):
-    def __init__(self, feature_dim=128, model='resnet18', use_augment=True):
+    def __init__(self, feature_dim=128, model='resnet18'):
         super(SimCLRJacobianModel, self).__init__()
-        
-        self.use_augment = use_augment
 
         resnet = None 
         if model == 'resnet50': 
@@ -277,12 +275,10 @@ class SimCLRJacobianModel(nn.Module):
 
     def forward(self, x, params=None, mode='train'):
 
-        if mode == 'train' and self.use_augment:
+        if mode == 'train':
             assert params is not None
 
-        if self.use_augment:
-            x = self.augment(x, params=params, mode=mode)
-
+        x = self.augment(x, params=params, mode=mode)
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)

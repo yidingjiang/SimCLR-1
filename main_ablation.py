@@ -37,17 +37,17 @@ def train(net, data_loader, train_optimizer):
            pos = pos.cuda(non_blocking=True)
 
         params1, params2 = None, None
-        if args.use_augment and args.grad_compute_type == 'centered':
+        if args.grad_compute_type == 'centered':
             params1, params_delta_r1, params_delta_l1 = get_batch_augmentation_centered_params(net, shape=pos.shape, eps=args.eps)
-        elif args.use_augment and args.grad_compute_type == 'default':
+        elif args.grad_compute_type == 'default':
             params1, params_delta1 = get_batch_augmentation_params(net, shape=pos.shape, eps=args.eps)
         
         # [B, D]
         feature_1, out_1 = net(pos, params=params1)
 
-        if args.use_augment and args.grad_compute_type == 'centered':
+        if args.grad_compute_type == 'centered':
             params2, params_delta_r2,  params_delta_l2 = get_batch_augmentation_centered_params(net, shape=pos.shape, eps=args.eps)
-        elif args.use_augment and args.grad_compute_type == 'default':
+        elif args.grad_compute_type == 'default':
             params2, params_delta2 = get_batch_augmentation_params(net, shape=pos.shape, eps=args.eps)
 
         # [B, D]
@@ -206,7 +206,6 @@ if __name__ == '__main__':
     parser.add_argument('--grad_compute_type', default='default', type=str, help='Should we add norm of gradients wrt jitter to loss? (default/centered)')
     parser.add_argument('--seed', default=0, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--plot_jac', default=False, type=bool, help='Should the jacobian be plotted?')
-    parser.add_argument('--use_augment', default=False, type=str2bool, help='Should we use augmentation')
     
     # args parse
     args = parser.parse_args()
@@ -222,30 +221,26 @@ if __name__ == '__main__':
 
     cuda_available = torch.cuda.is_available()
     print("Preparing data...")
-
-    train_transform = dataloader.train_orig_transform if args.use_augment else dataloader.train_transform
-    test_transform = dataloader.test_orig_transform if  args.use_augment else dataloader.test_transform
-
     # data prepare
     train_data = dataloader.CIFAR10Data(root='data', train=True,
-                                    transform=train_transform,
+                                    transform=dataloader.train_transform,
                                     download=True)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True,
                             drop_last=True)
 
     memory_data = dataloader.CIFAR10Data(root='data', train=True, 
-                                    transform=test_transform, 
+                                    transform=dataloader.test_transform, 
                                     download=True)
     memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
     test_data = dataloader.CIFAR10Data(root='data', train=False, 
-                                    transform=test_transform, 
+                                    transform=dataloader.test_transform, 
                                     download=True)
     test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
     
     print("Data prepared. Now initializing out Model...")
     # model setup and optimizer config
-    model = SimCLRJacobianModel(feature_dim=feature_dim, model=args.resnet, use_augment=args.use_augment)
+    model = SimCLRJacobianModel(feature_dim=feature_dim, model=args.resnet)
     inputs = torch.randn(1, 3, 32, 32)
 
     if cuda_available:
