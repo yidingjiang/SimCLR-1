@@ -234,9 +234,11 @@ class ProposedModel(nn.Module):
 
 
 class SimCLRJacobianModel(nn.Module):
-    def __init__(self, feature_dim=128, model='resnet18'):
+    def __init__(self, feature_dim=128, model='resnet18', use_augment=True):
         super(SimCLRJacobianModel, self).__init__()
         
+        self.use_augment = use_augment
+
         resnet = None 
         if model == 'resnet50': 
             resnet = resnet50
@@ -270,13 +272,17 @@ class SimCLRJacobianModel(nn.Module):
                                     nn.ReLU(inplace=True), 
                                     nn.Linear(512, feature_dim, bias=True))
 
-
-        self.augment = KorniaAugmentationModule()
+        if self.use_augment:
+            self.augment = KorniaAugmentationModule()
 
     def forward(self, x, params=None, mode='train'):
-        if mode == 'train':
+
+        if mode == 'train' and self.use_augment:
             assert params is not None
-        x = self.augment(x, params=params, mode=mode)
+
+        if self.use_augment:
+            x = self.augment(x, params=params, mode=mode)
+
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)
