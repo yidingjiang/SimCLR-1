@@ -118,7 +118,7 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
     total_top1, total_top5, total_num, feature_bank = 0.0, 0.0, 0, []
     with torch.no_grad():
         # generate feature bank
-        for data, _, target in tqdm(memory_data_loader, desc='Feature extracting'):
+        for data, target in tqdm(memory_data_loader, desc='Feature extracting'):
             if cuda_available:
                 data = data.cuda(non_blocking=True)
             feature, out = net(data, mode='test')
@@ -129,7 +129,7 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
         feature_labels = torch.tensor(memory_data_loader.dataset.targets, device=feature_bank.device)
         # loop test data to predict the label by weighted knn search
         test_bar = tqdm(test_data_loader)
-        for data, _, target in test_bar:
+        for data, target in test_bar:
             if cuda_available:
                 data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
 
@@ -204,7 +204,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_jitter_norm', default=False, type=bool, help='Should we add norm of gradients wrt jitter to loss?')
     parser.add_argument('--use_crop_norm', default=False, type=bool, help='Should we add norm of gradients wrt jitter to loss?')
     parser.add_argument('--grad_compute_type', default='default', type=str, help='Should we add norm of gradients wrt jitter to loss? (default/centered)')
-    parser.add_argument('--seed', default=0, type=int, help='Number of sweeps over the dataset to train')
+    parser.add_argument('--seed', default=1, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--plot_jac', default=False, type=bool, help='Should the jacobian be plotted?')
     
     # args parse
@@ -213,11 +213,25 @@ if __name__ == '__main__':
     batch_size, epochs = args.batch_size, args.epochs
     temperature = args.temperature
 
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
 
     if args.use_wandb:
         wandb.init(project="contrastive learning", config=args)
+
+    seed = args.seed
+
+    # Make the process deterministic
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
+    np.random.seed(seed)  # Numpy module.
+    random.seed(seed)  # Python random module.
+    torch.manual_seed(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+    # For workers in dataloaders
+    def _init_fn(worker_id):
+        np.random.seed(int(seed))
 
     cuda_available = torch.cuda.is_available()
     print("Preparing data...")
@@ -225,18 +239,19 @@ if __name__ == '__main__':
     train_data = dataloader.CIFAR10Data(root='data', train=True,
                                     transform=dataloader.train_transform,
                                     download=True)
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True,
+
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True, worker_init_fn=_init_fn,
                             drop_last=True)
 
     memory_data = dataloader.CIFAR10Data(root='data', train=True, 
                                     transform=dataloader.test_transform, 
                                     download=True)
-    memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
+    memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, worker_init_fn=_init_fn, pin_memory=True)
 
     test_data = dataloader.CIFAR10Data(root='data', train=False, 
                                     transform=dataloader.test_transform, 
                                     download=True)
-    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
+    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, worker_init_fn=_init_fn, pin_memory=True)
     
     print("Data prepared. Now initializing out Model...")
     # model setup and optimizer config
@@ -285,3 +300,4 @@ if __name__ == '__main__':
         
         # if epoch % args.save_interval == 0:
         #     torch.save(model.state_dict(), '{}/{}_model_{}.pth'.format(output_dir, save_name_pre, str(epoch)))
+

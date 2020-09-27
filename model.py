@@ -140,22 +140,22 @@ class KorniaAugmentationModule(nn.Module):
             pil_img = FT.to_pil_image(x[0])
             pil_img.show()
 
-        if mode == 'train':
-            if augment_type == 'orig':
-                x = self.crop(x, params['crop_params'])
-                x = self.hor_flip(x, params['hor_flip_params'])
-                x[params['jit_batch_probs']] = self.jit(x[params['jit_batch_probs']], params['jit_params'])
-                x = self.rand_grayscale(x, params['grayscale_params'])
+        # if mode == 'train':
+        #     if augment_type == 'orig':
+        #         x = self.crop(x, params['crop_params'])
+        #         x = self.hor_flip(x, params['hor_flip_params'])
+        #         x[params['jit_batch_probs']] = self.jit(x[params['jit_batch_probs']], params['jit_params'])
+        #         x = self.rand_grayscale(x, params['grayscale_params'])
 
-            elif augment_type == 'rot-jit':
-                x = self.aff(x, params['aff_params'])
-                x = self.jit(x, params['jit_params'])
+        #     elif augment_type == 'rot-jit':
+        #         x = self.aff(x, params['aff_params'])
+        #         x = self.jit(x, params['jit_params'])
 
-            elif augment_type == 'no_params':
-                x = self.crop(x)
-                x = self.hor_flip(x)
-                x = self.jit(x)
-                x = self.rand_grayscale(x)
+        #     elif augment_type == 'no_params':
+        #         x = self.crop(x)
+        #         x = self.hor_flip(x)
+        #         x = self.jit(x)
+        #         x = self.rand_grayscale(x)
 
             if visualize:
                 pil_img_bright = FT.to_pil_image(x[0])
@@ -232,7 +232,6 @@ class ProposedModel(nn.Module):
         # else we are getting normalized output from projection head
         return F.normalize(feature, dim=-1), out
 
-
 class SimCLRJacobianModel(nn.Module):
     def __init__(self, feature_dim=128, model='resnet18'):
         super(SimCLRJacobianModel, self).__init__()
@@ -270,8 +269,7 @@ class SimCLRJacobianModel(nn.Module):
                                     nn.ReLU(inplace=True), 
                                     nn.Linear(512, feature_dim, bias=True))
 
-        if self.use_augment:
-            self.augment = KorniaAugmentationModule()
+        self.augment = KorniaAugmentationModule()
 
     def forward(self, x, params=None, mode='train'):
 
