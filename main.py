@@ -134,7 +134,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='learning rate')
     parser.add_argument('--resnet', default='resnet18', type=str, help='Type of resnet: 1. resnet18, resnet34, resnet50')
-    parser.add_argument('--seed', default=0, type=int, help='Number of sweeps over the dataset to train')
+    parser.add_argument('--seed', default=1, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--exp_name', required=True, type=str, help="name of experiment")
     parser.add_argument('--exp_group', default='grid_search', type=str, help='exp_group that can be used to filter results.')
     
@@ -143,8 +143,17 @@ if __name__ == '__main__':
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
     batch_size, epochs = args.batch_size, args.epochs
 
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+    seed = args.seed
+
+    # Make the process deterministic
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
+    np.random.seed(seed)  # Numpy module.
+    random.seed(seed)  # Python random module.
+    torch.manual_seed(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
 
     if args.use_wandb:
         wandb.init(project="contrastive learning", config=args)
@@ -155,12 +164,12 @@ if __name__ == '__main__':
 
     # data prepare
     train_data = dataloader.CIFAR10Pair(root='data', train=True, transform=dataloader.train_orig_transform, download=True)
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True,
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True, worker_init_fn=_init_fn,
                             drop_last=True)
     memory_data = dataloader.CIFAR10Pair(root='data', train=True, transform=dataloader.test_orig_transform, download=True)
-    memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
+    memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True, worker_init_fn=_init_fn)
     test_data = dataloader.CIFAR10Pair(root='data', train=False, transform=dataloader.test_orig_transform, download=True)
-    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
+    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True, worker_init_fn=_init_fn)
 
     print("Data prepared. Now initializing out Model...")
     # model setup and optimizer config
