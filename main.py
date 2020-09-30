@@ -16,7 +16,7 @@ import wandb
 import numpy as np
 import matplotlib.pyplot as plt 
 from PIL import Image
-
+import random
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
     net.train()
@@ -154,6 +154,9 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
+    # For workers in dataloaders
+    def _init_fn(worker_id):
+        np.random.seed(int(seed))
 
     if args.use_wandb:
         wandb.init(project="contrastive learning", config=args)
