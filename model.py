@@ -137,7 +137,7 @@ class KorniaAugmentationModule(nn.Module):
 
     @torch.no_grad()
     # Note that I should only normalize in test mode; no other type of augmentation should be performed
-    def forward(self, x, params=None, mode='train', visualize=False, augment_type='no_params'):
+    def forward(self, x, params=None, mode='train', visualize=False, augment_type='orig'):
         B = x.shape[0]
 
         if visualize:
@@ -157,9 +157,9 @@ class KorniaAugmentationModule(nn.Module):
 
             elif augment_type == 'no_params':
                 x = self.crop(x)
-                # x = self.hor_flip(x)
-                # x = self.jit(x)
-                # x = self.rand_grayscale(x)
+                x = self.hor_flip(x)
+                x = self.jit(x)
+                x = self.rand_grayscale(x)
 
             if visualize:
                 pil_img_bright = FT.to_pil_image(x[0])
