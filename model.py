@@ -7,6 +7,8 @@ import torchvision
 import torchvision.transforms.functional as FT
 import numpy as np
 import kornia.augmentation as K
+from kornia.constants import Resample
+from augmentation_utils import RandomResizedCrop
 
 class OriginalModel(nn.Module):
     def __init__(self, feature_dim=128, model='resnet18'):
@@ -46,6 +48,7 @@ class OriginalModel(nn.Module):
                                     nn.Linear(512, feature_dim, bias=True))
 
     def forward(self, x):
+        import pdb; pdb.set_trace()
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)
         out = self.g(feature)
@@ -123,7 +126,8 @@ class KorniaAugmentationModule(nn.Module):
         self.jit_prob = 0.8
         self.gs_prob = 0.2
 
-        self.crop = K.RandomResizedCrop(size=(32, 32), same_on_batch=False)
+        # self.crop = K.RandomResizedCrop(size=(32, 32), interpolation=Resample.BILINEAR, same_on_batch=False)
+        self.crop = RandomResizedCrop(size=32)
         self.hor_flip = K.RandomHorizontalFlip(p=self.hor_flip_prob, same_on_batch=False)
         self.jit = K.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=self.jit_prob, same_on_batch=False)
         self.rand_grayscale =  K.RandomGrayscale(p=self.gs_prob, same_on_batch=False)
@@ -133,29 +137,29 @@ class KorniaAugmentationModule(nn.Module):
 
     @torch.no_grad()
     # Note that I should only normalize in test mode; no other type of augmentation should be performed
-    def forward(self, x, params=None, mode='train', visualize=False, augment_type='orig'):
+    def forward(self, x, params=None, mode='train', visualize=False, augment_type='no_params'):
         B = x.shape[0]
 
         if visualize:
             pil_img = FT.to_pil_image(x[0])
             pil_img.show()
 
-        # if mode == 'train':
-        #     if augment_type == 'orig':
-        #         x = self.crop(x, params['crop_params'])
-        #         x = self.hor_flip(x, params['hor_flip_params'])
-        #         x[params['jit_batch_probs']] = self.jit(x[params['jit_batch_probs']], params['jit_params'])
-        #         x = self.rand_grayscale(x, params['grayscale_params'])
+        if mode == 'train':
+            if augment_type == 'orig':
+                x = self.crop(x, params['crop_params'])
+                x = self.hor_flip(x, params['hor_flip_params'])
+                x[params['jit_batch_probs']] = self.jit(x[params['jit_batch_probs']], params['jit_params'])
+                x = self.rand_grayscale(x, params['grayscale_params'])
 
-        #     elif augment_type == 'rot-jit':
-        #         x = self.aff(x, params['aff_params'])
-        #         x = self.jit(x, params['jit_params'])
+            elif augment_type == 'rot-jit':
+                x = self.aff(x, params['aff_params'])
+                x = self.jit(x, params['jit_params'])
 
-        #     elif augment_type == 'no_params':
-        #         x = self.crop(x)
-        #         x = self.hor_flip(x)
-        #         x = self.jit(x)
-        #         x = self.rand_grayscale(x)
+            elif augment_type == 'no_params':
+                x = self.crop(x)
+                # x = self.hor_flip(x)
+                # x = self.jit(x)
+                # x = self.rand_grayscale(x)
 
             if visualize:
                 pil_img_bright = FT.to_pil_image(x[0])
@@ -276,6 +280,7 @@ class SimCLRJacobianModel(nn.Module):
         if mode == 'train':
             assert params is not None
 
+        import pdb; pdb.set_trace()
         x = self.augment(x, params=params, mode=mode)
         x = self.f(x)
         feature = torch.flatten(x, start_dim=1)

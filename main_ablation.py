@@ -20,6 +20,8 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import copy
 
+import random
+
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
 

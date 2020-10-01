@@ -16,12 +16,14 @@ import wandb
 import numpy as np
 import matplotlib.pyplot as plt 
 from PIL import Image
+import random 
 
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
     net.train()
     total_loss, total_num, train_bar = 0.0, 0, tqdm(data_loader)
     for pos_1, pos_2, target in train_bar:
+        
         if cuda_available:
             pos_1, pos_2 = pos_1.cuda(non_blocking=True), pos_2.cuda(non_blocking=True)
 
@@ -154,6 +156,10 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
+
+    # For workers in dataloaders
+    def _init_fn(worker_id):
+        np.random.seed(int(seed))
 
     if args.use_wandb:
         wandb.init(project="contrastive learning", config=args)

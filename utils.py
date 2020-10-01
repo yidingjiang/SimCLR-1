@@ -133,7 +133,8 @@ def get_batch_augmentation_params(net, shape, eps=1e-3):
     params = {}
     params_delta = {}
     # Generate params for cropping
-    params['crop_params'], params_delta['crop_params_delta'] = get_batch_op_augment_params(net.augment.crop, shape, eps=1, only_keys=['src'])
+    
+    # params['crop_params'], params_delta['crop_params_delta'] = get_batch_op_augment_params(net.augment.crop, shape, eps=1, only_keys=['src'])
     
     # Generate params for horizontal flip
     params['hor_flip_params'], params_delta['hor_flip_params_delta'] = get_batch_op_augment_params(net.augment.hor_flip, shape, eps)
