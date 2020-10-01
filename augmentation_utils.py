@@ -16,7 +16,7 @@ class RandomResizedCrop(object):
         self.scale = scale
         self.ratio = ratio
     
-    def get_params(self, img, scale, ratio):
+    def get_params(self, img, scale, ratio, shape=None):
         """Get parameters for ``crop`` for a random sized crop.
 
         Args:
@@ -28,7 +28,14 @@ class RandomResizedCrop(object):
             tuple: params (i, j, h, w) to be passed to ``crop`` for a random
                 sized crop.
         """
-        B, _, width, height = img.shape
+        if img is not None:
+            B, _, width, height = img.shape
+        else:
+            assert shape is not None, "no images are being passed. Please pass some shape."
+            B = shape[0]
+            height = shape[-2]
+            width = shape[-1]
+
         area = height * width
 
         top_left    = []
@@ -51,8 +58,6 @@ class RandomResizedCrop(object):
 
             for i in range(len(w_idx)): 
                 top_left.append(np.random.randint(0, height - h_idx[i]))
-                # if width - w_idx[i] <= 0:
-                #     import pdb; pdb.set_trace()
                 top_right.append(np.random.randint(0, width - w_idx[i]))
 
             h_vals.append(h_idx)
@@ -60,9 +65,15 @@ class RandomResizedCrop(object):
             
             itr +=1
         # print("Total iterations ", itr)
+        top_left = np.array(top_left)
+        top_right = np.array(top_right)
         h_vals = np.concatenate(h_vals)
         w_vals = np.concatenate(w_vals)
         return top_left[:B], top_right[:B], h_vals[:B], w_vals[:B]
+
+    def generate_parameters(self, shape):
+        i, j, h, w = self.get_params(img=None, scale=self.scale, ratio=self.ratio, shape=shape)
+        return {"top_x": i, "top_y": j, "height": h, "width": w}
 
     def __call__(self, img):
         """

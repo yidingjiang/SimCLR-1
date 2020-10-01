@@ -1,5 +1,6 @@
 import torch
 import copy
+import numpy as np
 
 cuda_available = torch.cuda.is_available()
 
@@ -54,12 +55,14 @@ def get_batch_op_augment_params(op, shape, eps, only_keys=None, clamp_low=0, cla
             if only_keys is not None and k in only_keys:
                 params_delta[k] = params[k] + eps
                 #  Needs to be generalized, currently using this for only crop
-                params_delta[k] = params_delta[k].clamp(clamp_low, clamp_hi)
+                if type(params_delta[k]) == np.ndarray:
+                    params_delta[k] = np.clip(params_delta[k], clamp_low, clamp_hi)
+                else:    
+                    params_delta[k] = params_delta[k].clamp(clamp_low, clamp_hi)
             else:
-                if params[k].dtype == torch.float64 or params[k].dtype == torch.float32:
-                    # if k is 'order':
-                    #     params_delta[k] = params[k]
-                    # else:
+                if type(params[k]) == list or type(params[k]) == np.ndarray:
+                    params_delta[k] = params[k]
+                elif params[k].dtype == torch.float64 or params[k].dtype == torch.float32:
                     params_delta[k] = params[k] + eps
                 else:
                     params_delta[k] = params[k]
@@ -83,7 +86,10 @@ def get_batch_op_augment_params_centered(op, shape, eps, only_keys=None, clamp_l
                 params_delta_r[k] = params_delta_r[k].clamp(clamp_low, clamp_hi)
                 params_delta_l[k] = params_delta_l[k].clamp(clamp_low, clamp_hi)
             else:
-                if params[k].dtype == torch.float64 or params[k].dtype == torch.float32:
+                if type(params[k]) == np.ndarray:
+                    params_delta_r[k] = params[k]
+                    params_delta_l[k] = params[k]
+                elif params[k].dtype == torch.float64 or params[k].dtype == torch.float32:
                     params_delta_r[k] = params[k] + eps
                     params_delta_l[k] = params[k] - eps
                 else:
@@ -103,7 +109,7 @@ def get_batch_augmentation_centered_params(net, shape, eps=1e-3):
     params_delta_r, params_delta_l = {}, {}
     # Generate params for cropping
     params['crop_params'], params_delta_r['crop_params_delta'], params_delta_l['crop_params_delta'] = get_batch_op_augment_params_centered(
-                                                net.augment.crop, shape, eps=1, only_keys=['src'])
+                                                net.augment.crop, shape, eps=1, only_keys=['top_x', 'top_y'])
 
     # Generate params for horizontal flip
     params['hor_flip_params'], params_delta_r['hor_flip_params_delta'], params_delta_l['hor_flip_params_delta'] = get_batch_op_augment_params_centered(
@@ -133,8 +139,7 @@ def get_batch_augmentation_params(net, shape, eps=1e-3):
     params = {}
     params_delta = {}
     # Generate params for cropping
-    
-    # params['crop_params'], params_delta['crop_params_delta'] = get_batch_op_augment_params(net.augment.crop, shape, eps=1, only_keys=['src'])
+    params['crop_params'], params_delta['crop_params_delta'] = get_batch_op_augment_params(net.augment.crop, shape, eps=1, only_keys=['top_x', 'top_y'])
     
     # Generate params for horizontal flip
     params['hor_flip_params'], params_delta['hor_flip_params_delta'] = get_batch_op_augment_params(net.augment.hor_flip, shape, eps)
