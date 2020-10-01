@@ -75,7 +75,7 @@ class RandomResizedCrop(object):
         i, j, h, w = self.get_params(img=None, scale=self.scale, ratio=self.ratio, shape=shape)
         return {"top_x": i, "top_y": j, "height": h, "width": w}
 
-    def __call__(self, img):
+    def __call__(self, img, params=None):
         """
         Args:
             img (tensor): batch of image tensors to be cropped and resized.
@@ -83,7 +83,10 @@ class RandomResizedCrop(object):
         Returns:
             image tensor: Randomly cropped and resized image.
         """
-        i, j, h, w = self.get_params(img, self.scale, self.ratio)
+        if params is None:
+            i, j, h, w = self.get_params(img, self.scale, self.ratio)
+        else:
+            i, j, h, w = params['top_x'], params['top_y'], params['height'], params['width']
         img = crop_and_resize(img, i, j, h, w, self.size, self.mode)
         return img
 
