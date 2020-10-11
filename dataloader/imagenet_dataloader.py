@@ -104,6 +104,7 @@ def get_augmented_transforms(input_shape):
 
 def get_tensor_transforms():
     train_transform = transforms.Compose([
+        transforms.Resize(256),
         transforms.ToTensor(),
     ])
 

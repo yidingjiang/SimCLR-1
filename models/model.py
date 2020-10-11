@@ -98,7 +98,7 @@ class KorniaAugmentationModule(nn.Module):
         self.hor_flip = K.RandomHorizontalFlip(p=self.hor_flip_prob, same_on_batch=False)
         self.jit = K.ColorJitter(brightness=0.8 * self.s, contrast=0.8 * self.s, saturation=0.8 * self.s, hue= 0.2 * self.s, p=self.jit_prob, same_on_batch=False)
         self.rand_grayscale =  K.RandomGrayscale(p=self.gs_prob, same_on_batch=False)
-        self.gaussian_blue = GaussianBlur(kernel_size=int(0.1 * input_shape[1]))
+        self.gaussian_blur = GaussianBlur(kernel_size=int(0.1 * input_shape[1])+1)
         
         self.aff = K.RandomAffine(360)
         self.normalize = K.Normalize(self.mu, self.sigma)
@@ -118,6 +118,7 @@ class KorniaAugmentationModule(nn.Module):
                 x = self.hor_flip(x, params['hor_flip_params'])
                 x[params['jit_batch_probs']] = self.jit(x[params['jit_batch_probs']], params['jit_params'])
                 x = self.rand_grayscale(x, params['grayscale_params'])
+                #x = self.gaussian_blur(x, params['gaussian_blur'])
 
             elif augment_type == 'rot-jit':
                 x = self.aff(x, params['aff_params'])
@@ -128,6 +129,7 @@ class KorniaAugmentationModule(nn.Module):
                 x = self.hor_flip(x)
                 x = self.jit(x)
                 x = self.rand_grayscale(x)
+                #x = self.gaussian_blur(x)
 
             if visualize:
                 pil_img_bright = FT.to_pil_image(x[0])
