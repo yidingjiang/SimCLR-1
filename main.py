@@ -9,6 +9,7 @@ from thop import profile, clever_format
 from tqdm import tqdm
 
 from dataloader.cifar_dataloader import load_cifar_data
+from dataloader.imagenet_dataloader import load_imagenet_data
 from utils.utils import *
 from models.model import OriginalModel
 import wandb
@@ -118,27 +119,30 @@ if __name__ == '__main__':
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='learning rate')
     parser.add_argument('--resnet', default='resnet18', type=str, help='Type of resnet: 1. resnet18, resnet34, resnet50')
+    parser.add_argument('--use_seed', default=False, type=bool, help='Should we make the process deterministic and use seeds?')
     parser.add_argument('--seed', default=1, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--exp_name', required=True, type=str, help="name of experiment")
     parser.add_argument('--exp_group', default='grid_search', type=str, help='exp_group that can be used to filter results.')
     parser.add_argument('--dataset', default='cifar10', type=str, help='dataset to train the model on. Current choices: 1. cifar10 2. imagenet')
+    parser.add_argument('--data_path', default='data', type=str, help='Path to dataset')
 
     # args parse
     args = parser.parse_args()
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
     batch_size, epochs = args.batch_size, args.epochs
 
-    seed = args.seed
+    if args.use_seed:
+        seed = args.seed
 
-    # Make the process deterministic
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
-    np.random.seed(seed)  # Numpy module.
-    random.seed(seed)  # Python random module.
-    torch.manual_seed(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
+        # Make the process deterministic
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
+        np.random.seed(seed)  # Numpy module.
+        random.seed(seed)  # Python random module.
+        torch.manual_seed(seed)
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
 
     if args.use_wandb:
         wandb.init(project="contrastive learning", config=args)
@@ -148,13 +152,24 @@ if __name__ == '__main__':
     print("Preparing data...")
 
     if args.dataset == 'cifar10':
-        train_loader, memory_loader, test_loader = load_cifar_data(batch_size, args.num_workers, seed, input_shape=(3,32,32), 
+        train_loader, memory_loader, test_loader = load_cifar_data('data', batch_size, args.num_workers, args.use_seed, args.seed, input_shape=(3,32,32), 
                                                     use_augmentation=True, load_pair=True)
+    elif args.dataset == 'imagenet':
+        train_loader, memory_loader, test_loader = load_imagenet_data('data/imagenet', batch_size, args.num_workers, args.use_seed, args.seed, input_shape=(3,224,224), 
+                                                    use_augmentation=True, load_pair=True)
+    else:
+        raise ValueError("Unknown dataset {}".format(args.dataset))
 
     print("Data prepared. Now initializing out Model...")
+
     # model setup and optimizer config
     model = OriginalModel(feature_dim, model=args.resnet, dataset=args.dataset)
-    inputs = torch.randn(1, 3, 32, 32)
+    
+    if args.dataset == 'cifar10':
+        inputs = torch.randn(1, 3, 32, 32)
+    else:
+        inputs = torch.randn(1, 3, 224, 224)
+
     if cuda_available:
         model = model.cuda()
         inputs = inputs.cuda()
@@ -162,12 +177,12 @@ if __name__ == '__main__':
     flops, params = profile(model, inputs=(inputs,))
     flops, params = clever_format([flops, params])
     print('# Model Params: {} FLOPs: {}'.format(params, flops))
+
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    # c = len(memory_data.classes)
 
     # training loop
     results = {'train_loss': [], 'test_acc@1': [], 'test_acc@5': []}
-    save_name_pre = '{}_{}_{}_{}_{}_{}_seed_{}'.format(args.exp_name, args.model_type, feature_dim, k, batch_size, epochs, seed)
+    save_name_pre = '{}_{}_{}_{}_{}_{}_seed_{}'.format(args.exp_name, args.model_type, feature_dim, k, batch_size, epochs, args.seed)
 
     dirname = "results-{}".format(args.dataset)
     if not os.path.exists(dirname):
@@ -182,17 +197,27 @@ if __name__ == '__main__':
         train_loss = train(model, train_loader, optimizer)
         results['train_loss'].append(train_loss)
 
-        plot_img = False
-        test_acc_1, test_acc_5 = test(model, memory_loader, test_loader, epoch, plot_img=plot_img)
+        if args.dataset == 'cifar10':
+            test_acc_1, test_acc_5 = test(model, memory_loader, test_loader, epoch)
 
-        results['test_acc@1'].append(test_acc_1)
-        results['test_acc@5'].append(test_acc_5)
-        if args.use_wandb:
-            wandb.log({"epoch": epoch, "train loss": train_loss, "test_acc@1": test_acc_1, "test_acc@5": test_acc_5})
+            results['test_acc@1'].append(test_acc_1)
+            results['test_acc@5'].append(test_acc_5)
+            if args.use_wandb:
+                wandb.log({"epoch": epoch, "train loss": train_loss, "test_acc@1": test_acc_1, "test_acc@5": test_acc_5})
 
-        # save statistics
-        data_frame = pd.DataFrame(data=results, index=range(1, epoch + 1))
-        data_frame.to_csv('{}/{}_statistics.csv'.format(dirname, save_name_pre), index_label='epoch')
-        if test_acc_1 > best_acc:
-            best_acc = test_acc_1
-            torch.save(model.state_dict(), '{}/{}_model_best.pth'.format(output_dir, save_name_pre))
+            # save statistics
+            data_frame = pd.DataFrame(data=results, index=range(1, epoch + 1))
+            data_frame.to_csv('{}/{}_statistics.csv'.format(dirname, save_name_pre), index_label='epoch')
+            if test_acc_1 > best_acc:
+                best_acc = test_acc_1
+                torch.save(model.state_dict(), '{}/{}_model_best.pth'.format(output_dir, save_name_pre))
+
+        else:
+            # k-NN based testing is memory intensive, not possible for ImageNet
+            if args.use_wandb:
+                wandb.log({"epoch": epoch, "train loss": train_loss})
+        
+            if epoch % 10 == 0:
+                torch.save(model.state_dict(), '{}/{}_model_{}.pth'.format(output_dir, save_name_pre, epoch))
+    
+    torch.save(model.state_dict(), '{}/{}_model_best.pth'.format(output_dir, save_name_pre))

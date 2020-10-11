@@ -41,28 +41,36 @@ class CIFAR10Data(CIFAR10):
 
         return pos, target
 
-def load_cifar_data(batch_size, num_workers, seed, input_shape, use_augmentation=False, load_pair=False):
+def load_cifar_data(datapath, batch_size, num_workers, use_seed, seed, input_shape, use_augmentation=False, load_pair=False, linear_eval=False):
     # For workers in dataloaders
     def _init_fn(worker_id):
-        np.random.seed(int(seed))
+        if use_seed:
+            np.random.seed(int(seed))
+        return
 
     if use_augmentation:
-        train_transform, test_transform = get_augmented_transforms(input_shape)
+        if linear_eval:
+            train_transform, test_transform = get_linear_eval_transforms()
+        else:
+            train_transform, test_transform = get_augmented_transforms(input_shape)
     else:
-        train_transform, test_transform = get_tensor_transforms(input_shape)
+        train_transform, test_transform = get_tensor_transforms()
 
     if load_pair:
         dataloader_class = CIFAR10Pair
     else:
         dataloader_class = CIFAR10Data
+
+    if datapath is None:
+        datapath = "data"
         
     # data prepare
-    train_data = dataloader_class(root='data', train=True, transform=train_transform, download=True)
+    train_data = dataloader_class(root=datapath, train=True, transform=train_transform, download=True)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, worker_init_fn=_init_fn,
                             drop_last=True)
-    memory_data = dataloader_class(root='data', train=True, transform=test_transform, download=True)
+    memory_data = dataloader_class(root=datapath, train=True, transform=test_transform, download=True)
     memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, worker_init_fn=_init_fn)
-    test_data = dataloader_class(root='data', train=False, transform=test_transform, download=True)
+    test_data = dataloader_class(root=datapath, train=False, transform=test_transform, download=True)
     test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, worker_init_fn=_init_fn)
     return train_loader, memory_loader, test_loader
 
@@ -83,7 +91,6 @@ def get_augmented_transforms(input_shape):
         transforms.ToTensor(),
         transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
     ])
-
     return test_orig_transform, test_orig_transform
 
 def get_tensor_transforms():
@@ -97,3 +104,17 @@ def get_tensor_transforms():
     ])
 
     return train_transform, test_transform
+
+def get_linear_eval_transforms():
+    train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(32),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010])
+    ])
+
+    test_transform = transforms.Compose([
+        transforms.ToTensor()
+        transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010])
+    ])
+    return test_transform, test_transform
