@@ -152,10 +152,10 @@ if __name__ == '__main__':
     print("Preparing data...")
 
     if args.dataset == 'cifar10':
-        train_loader, memory_loader, test_loader = load_cifar_data('data', batch_size, args.num_workers, args.use_seed, args.seed, input_shape=(3,32,32), 
+        train_loader, memory_loader, test_loader = load_cifar_data(args.data_path, batch_size, args.num_workers, args.use_seed, args.seed, input_shape=(3,32,32), 
                                                     use_augmentation=True, load_pair=True)
     elif args.dataset == 'imagenet':
-        train_loader, memory_loader, test_loader = load_imagenet_data('data/imagenet', batch_size, args.num_workers, args.use_seed, args.seed, input_shape=(3,224,224), 
+        train_loader, memory_loader, test_loader = load_imagenet_data(args.data_path, batch_size, args.num_workers, args.use_seed, args.seed, input_shape=(3,224,224), 
                                                     use_augmentation=True, load_pair=True)
     else:
         raise ValueError("Unknown dataset {}".format(args.dataset))
