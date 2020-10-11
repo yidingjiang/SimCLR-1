@@ -14,32 +14,42 @@ class ImageNetPair(ImageNet):
     """ImageNet Dataset.
     """
     def __getitem__(self, index):
-        img, target = self.data[index], self.targets[index]
-        img = Image.fromarray(img)
+        """
+        Args:
+            index (int): Index
 
+        Returns:
+            tuple: (sample, target) where target is class_index of the target class.
+        """
+        path, target = self.samples[index]
+        sample = self.loader(path)
         if self.transform is not None:
-            pos_1 = self.transform(img)
-            pos_2 = self.transform(img)
-
+            sample1 = self.transform(sample)
+            sample2 = self.transform(sample)
         if self.target_transform is not None:
             target = self.target_transform(target)
 
-        return pos_1, pos_2, target
+        return sample1, sample2, target
 
 class ImageNetData(ImageNet):
     """ImageNet Dataset.
     """
     def __getitem__(self, index):
-        img, target = self.data[index], self.targets[index]
-        img = Image.fromarray(img)
+            """
+            Args:
+                index (int): Index
 
-        if self.transform is not None:
-            pos = self.transform(img)
+            Returns:
+                tuple: (sample, target) where target is class_index of the target class.
+            """
+            path, target = self.samples[index]
+            sample = self.loader(path)
+            if self.transform is not None:
+                sample = self.transform(sample)
+            if self.target_transform is not None:
+                target = self.target_transform(target)
 
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return pos, target
+            return sample, target
 
 def load_imagenet_data(data_path, batch_size, num_workers, use_seed, seed, input_shape, use_augmentation=False, load_pair=False, linear_eval=False):
     # For workers in dataloaders
