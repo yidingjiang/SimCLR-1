@@ -6,17 +6,17 @@ import pandas as pd
 import torch
 import torch.optim as optim
 from thop import profile, clever_format
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import dataloader
-from utils import *
-from model import OriginalModel
+from dataloader.cifar_dataloader import load_cifar_data
+from utils.utils import *
+from models.model import OriginalModel
 import wandb
 import numpy as np
 import matplotlib.pyplot as plt 
 from PIL import Image
 import random
+
 # train for one epoch to learn unique features
 def train(net, data_loader, train_optimizer):
     net.train()
@@ -52,7 +52,7 @@ def train(net, data_loader, train_optimizer):
 
 
 # test for one epoch, use weighted knn to find the most similar images' label to assign the test image
-def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
+def test(net, memory_data_loader, test_data_loader, epoch):
     net.eval()
     total_top1, total_top5, total_num, feature_bank = 0.0, 0.0, 0, []
     all_data = []
@@ -101,30 +101,13 @@ def test(net, memory_data_loader, test_data_loader, epoch, plot_img=True):
             total_top5 += torch.sum((pred_labels[:, :5] == target.unsqueeze(dim=-1)).any(dim=-1).float()).item()
             test_bar.set_description('Test Epoch: [{}/{}] Acc@1:{:.2f}% Acc@5:{:.2f}%'
                                      .format(epoch, epochs, total_top1 / total_num * 100, total_top5 / total_num * 100))
-            if plot_img:
-                fig, axs = plt.subplots(10, 7)
-                target = target.cpu().detach().numpy()
-                sim_indices = sim_indices.cpu().detach().numpy()
-                for label in range(10):
-                    cur_index = np.where(target == label)[0][0]
-                    cur_img = data[cur_index].cpu().detach().numpy()
-                    cur_features = feature[cur_index].cpu().detach().numpy()
-
-                    axs[label][0].imshow(cur_img.reshape(32,32,3))
-
-                    for offset, index in enumerate(sim_indices[cur_index][:5]):
-                        axs[label][2 + offset].imshow(all_data[index].cpu().detach().numpy().reshape(32,32,3))
-                
-                fig.savefig('plot.png')
-                if args.use_wandb:
-                    wandb.log({"Features of k-NN; k=5": [wandb.Image(Image.open('plot.png'), caption=f"feature @epoch {epoch}")]})
 
     return total_top1 / total_num * 100, total_top5 / total_num * 100
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train SimCLR')
-    parser.add_argument('--feature_dim', default=128, type=int, help='Feature dim for latent vector')
+    parser.add_argument('--feature_dim', default=256, type=int, help='Feature dim for latent vector')
     parser.add_argument('--temperature', default=0.5, type=float, help='Temperature used in softmax')
     parser.add_argument('--k', default=200, type=int, help='Top k most similar images used to predict the label')
     parser.add_argument('--batch_size', default=128, type=int, help='Number of images in each mini-batch')
@@ -138,7 +121,8 @@ if __name__ == '__main__':
     parser.add_argument('--seed', default=1, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--exp_name', required=True, type=str, help="name of experiment")
     parser.add_argument('--exp_group', default='grid_search', type=str, help='exp_group that can be used to filter results.')
-    
+    parser.add_argument('--dataset', default='cifar10', type=str, help='dataset to train the model on. Current choices: 1. cifar10 2. imagenet')
+
     # args parse
     args = parser.parse_args()
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
@@ -155,13 +139,6 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-    # For workers in dataloaders
-    def _init_fn(worker_id):
-        np.random.seed(int(seed))
-
-    # For workers in dataloaders
-    def _init_fn(worker_id):
-        np.random.seed(int(seed))
 
     if args.use_wandb:
         wandb.init(project="contrastive learning", config=args)
@@ -170,18 +147,13 @@ if __name__ == '__main__':
 
     print("Preparing data...")
 
-    # data prepare
-    train_data = dataloader.CIFAR10Pair(root='data', train=True, transform=dataloader.train_orig_transform, download=True)
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True, worker_init_fn=_init_fn,
-                            drop_last=True)
-    memory_data = dataloader.CIFAR10Pair(root='data', train=True, transform=dataloader.test_orig_transform, download=True)
-    memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True, worker_init_fn=_init_fn)
-    test_data = dataloader.CIFAR10Pair(root='data', train=False, transform=dataloader.test_orig_transform, download=True)
-    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True, worker_init_fn=_init_fn)
+    if args.dataset == 'cifar10':
+        train_loader, memory_loader, test_loader = load_cifar_data(batch_size, args.num_workers, seed, input_shape=(3,32,32), 
+                                                    use_augmentation=True, load_pair=True)
 
     print("Data prepared. Now initializing out Model...")
     # model setup and optimizer config
-    model = OriginalModel(feature_dim, model=args.resnet)
+    model = OriginalModel(feature_dim, model=args.resnet, dataset=args.dataset)
     inputs = torch.randn(1, 3, 32, 32)
     if cuda_available:
         model = model.cuda()
@@ -191,11 +163,11 @@ if __name__ == '__main__':
     flops, params = clever_format([flops, params])
     print('# Model Params: {} FLOPs: {}'.format(params, flops))
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    c = len(memory_data.classes)
+    # c = len(memory_data.classes)
 
     # training loop
     results = {'train_loss': [], 'test_acc@1': [], 'test_acc@5': []}
-    save_name_pre = '{}_{}_{}_{}_{}_{}'.format(args.exp_name, args.model_type, feature_dim, k, batch_size, epochs)
+    save_name_pre = '{}_{}_{}_{}_{}_{}_seed_{}'.format(args.exp_name, args.model_type, feature_dim, k, batch_size, epochs, seed)
     if not os.path.exists('results'):
         os.mkdir('results')
     output_dir = 'results/{}'.format(datetime.now().strftime('%Y-%m-%d'))
