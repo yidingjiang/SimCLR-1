@@ -168,9 +168,11 @@ if __name__ == '__main__':
     # training loop
     results = {'train_loss': [], 'test_acc@1': [], 'test_acc@5': []}
     save_name_pre = '{}_{}_{}_{}_{}_{}_seed_{}'.format(args.exp_name, args.model_type, feature_dim, k, batch_size, epochs, seed)
-    if not os.path.exists('results'):
-        os.mkdir('results')
-    output_dir = 'results/{}'.format(datetime.now().strftime('%Y-%m-%d'))
+
+    dirname = "results-{}".format(args.dataset)
+    if not os.path.exists(dirname):
+        os.mkdir(dirname)
+    output_dir = '{}/{}'.format(dirname, datetime.now().strftime('%Y-%m-%d'))
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
 
@@ -181,8 +183,6 @@ if __name__ == '__main__':
         results['train_loss'].append(train_loss)
 
         plot_img = False
-        # if (epoch-1) % 20 == 0 or epoch == epochs - 1:
-        #     plot_img = True
         test_acc_1, test_acc_5 = test(model, memory_loader, test_loader, epoch, plot_img=plot_img)
 
         results['test_acc@1'].append(test_acc_1)
@@ -192,7 +192,7 @@ if __name__ == '__main__':
 
         # save statistics
         data_frame = pd.DataFrame(data=results, index=range(1, epoch + 1))
-        data_frame.to_csv('results/{}_statistics.csv'.format(save_name_pre), index_label='epoch')
+        data_frame.to_csv('{}/{}_statistics.csv'.format(dirname, save_name_pre), index_label='epoch')
         if test_acc_1 > best_acc:
             best_acc = test_acc_1
             torch.save(model.state_dict(), '{}/{}_model_best.pth'.format(output_dir, save_name_pre))

@@ -69,6 +69,8 @@ def get_batch_op_augment_params(op, shape, eps, only_keys=None, clamp_low=0, cla
 
         if cuda_available:
             for k in params.keys():
+                if type(params[k]) == np.ndarray:
+                    continue
                 params[k] = params[k].cuda()
                 params_delta[k] = params_delta[k].cuda()
 
