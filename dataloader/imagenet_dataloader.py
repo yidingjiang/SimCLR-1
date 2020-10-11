@@ -65,16 +65,13 @@ def load_imagenet_data(data_path, batch_size, num_workers, use_seed, seed, input
         data_path = "data"
 
     # data prepare
-    train_data = dataloader_class(root=data_path, split='train', transform=train_transform, download=True)
+    train_data = dataloader_class(root=data_path, split='train', transform=train_transform)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, worker_init_fn=_init_fn,
                             drop_last=True)
 
     memory_loader = None 
-    # We are not loading data in memory for kNN for imagenet (too much data)
-    #memory_data = dataloader_class(root=data_path, train=True, transform=test_transform, download=True)
-    #memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, worker_init_fn=_init_fn)
-    
-    test_data = dataloader_class(root=data_path, split='val', transform=test_transform, download=True)
+
+    test_data = dataloader_class(root=data_path, split='val', transform=test_transform)
     test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, worker_init_fn=_init_fn)
     return train_loader, memory_loader, test_loader
 
@@ -93,7 +90,7 @@ def get_augmented_transforms(input_shape):
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-    return test_orig_transform, test_orig_transform
+    return train_orig_transform, test_orig_transform
 
 def get_tensor_transforms():
     train_transform = transforms.Compose([

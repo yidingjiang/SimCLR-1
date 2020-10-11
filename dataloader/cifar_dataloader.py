@@ -91,7 +91,7 @@ def get_augmented_transforms(input_shape):
         transforms.ToTensor(),
         transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
     ])
-    return test_orig_transform, test_orig_transform
+    return train_orig_transform, test_orig_transform
 
 def get_tensor_transforms():
     train_transform = transforms.Compose([
