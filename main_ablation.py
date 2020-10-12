@@ -312,7 +312,10 @@ if __name__ == '__main__':
             # k-NN based testing is memory intensive, not possible for ImageNet
             if args.use_wandb:
                 wandb.log({"epoch": epoch, "train loss": train_loss})
-        
+                
+            data_frame = pd.DataFrame(data=results, index=range(1, epoch + 1))
+            data_frame.to_csv('results/{}_statistics.csv'.format(save_name_pre), index_label='epoch')
+
             if epoch % 10 == 0:
                 torch.save(model.state_dict(), '{}/{}_model_{}.pth'.format(output_dir, save_name_pre, epoch))
     
