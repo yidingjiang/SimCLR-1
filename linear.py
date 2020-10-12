@@ -26,8 +26,12 @@ class Net(nn.Module):
         else:
             self.f = SimCLRJacobianModel(feature_dim=feature_dim, model=encoder, dataset=dataset, input_shape=input_shape).f
 
+        encoder_out_dim = 512
+        if encoder == 'resnet50':
+            encoder_out_dim = 2048
+            
         # classifier
-        self.fc = nn.Linear(512, num_class, bias=True)
+        self.fc = nn.Linear(encoder_out_dim, num_class, bias=True)
         self.load_state_dict(torch.load(pretrained_path, map_location='cpu'), strict=False)
 
     def forward(self, x):

@@ -83,6 +83,10 @@ def load_imagenet_data(data_path, batch_size, num_workers, use_seed, seed, input
 
     test_data = dataloader_class(root=data_path, split='val', transform=test_transform)
     test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, worker_init_fn=_init_fn)
+    
+    assert len(train_data.classes) == 1000, "There are less than 1000 classes being returned by train data"
+    assert len(test_data.classes) == 1000, "There are less than 1000 classes being returned by train data"
+
     return train_loader, memory_loader, test_loader
 
 def get_augmented_transforms(input_shape):
@@ -116,6 +120,7 @@ def get_tensor_transforms():
 
 def get_linear_eval_transforms():
     train_transform = transforms.Compose([
+        transforms.Resize(size=(256, 256)),
         transforms.RandomResizedCrop(224),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.ToTensor(),
@@ -130,4 +135,4 @@ def get_linear_eval_transforms():
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-    return test_transform, test_transform
+    return train_transform, test_transform
