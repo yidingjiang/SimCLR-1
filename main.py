@@ -108,7 +108,7 @@ def test(net, memory_data_loader, test_data_loader, epoch):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train SimCLR')
-    parser.add_argument('--feature_dim', default=256, type=int, help='Feature dim for latent vector')
+    parser.add_argument('--feature_dim', default=128, type=int, help='Feature dim for latent vector')
     parser.add_argument('--temperature', default=0.5, type=float, help='Temperature used in softmax')
     parser.add_argument('--k', default=200, type=int, help='Top k most similar images used to predict the label')
     parser.add_argument('--batch_size', default=128, type=int, help='Number of images in each mini-batch')
@@ -174,9 +174,14 @@ if __name__ == '__main__':
         model = model.cuda()
         inputs = inputs.cuda()
 
-    flops, params = profile(model, inputs=(inputs,))
-    flops, params = clever_format([flops, params])
-    print('# Model Params: {} FLOPs: {}'.format(params, flops))
+    # flops, params = profile(model, inputs=(inputs,))
+    # flops, params = clever_format([flops, params])
+    # print('# Model Params: {} FLOPs: {}'.format(params, flops))
+    
+    total_model_parameters = sum(p.numel() for p in model.parameters())
+    total_trainable_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    print('# Total param: {} Trainable Params: {}'.format(total_model_parameters, total_trainable_parameters))
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 

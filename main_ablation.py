@@ -250,6 +250,10 @@ if __name__ == '__main__':
     if cuda_available:
         model = model.cuda()
 
+    total_model_parameters = sum(p.numel() for p in model.parameters())
+    total_trainable_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print('# Total param: {} Trainable Params: {}'.format(total_model_parameters, total_trainable_parameters))
+
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     # Some initial setup for saving checkpoints and results
