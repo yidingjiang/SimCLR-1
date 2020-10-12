@@ -13,7 +13,7 @@ from datetime import datetime
 from dataloader.cifar_dataloader import load_cifar_data
 from dataloader.imagenet_dataloader import load_imagenet_data
 
-from models.model import OriginalModel, ProposedModel
+from models.model import OriginalModel, SimCLRJacobianModel
 import wandb
 
 class Net(nn.Module):
@@ -75,7 +75,8 @@ if __name__ == '__main__':
     parser.add_argument('--model_type', type=str, default='proposed', help='Type of model to train - original SimCLR (original) or Proposed (proposed)')
     parser.add_argument('--exp_name', required=True, type=str, help="name of experiment")
     parser.add_argument('--exp_group', default='linear-classification', type=str, help='exp_group that can be used to filter results.')
-
+    parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')
+    
     parser.add_argument('--use_seed', default=False, type=bool, help='Should we make the process deterministic and use seeds?')
     parser.add_argument('--seed', default=0, type=int, help='Number of sweeps over the dataset to train')
     
