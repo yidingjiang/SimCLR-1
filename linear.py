@@ -68,6 +68,7 @@ def train_val(net, data_loader, train_optimizer):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Linear Evaluation')
+    parser.add_argument('--feature_dim', default=128, type=int, help='Feature dim for latent vector')
     parser.add_argument('--model_path', type=str, default=None, required=True,
                         help='The pretrained model path')
     parser.add_argument('--batch_size', type=int, default=4096, help='Number of images in each mini-batch')
@@ -76,6 +77,7 @@ if __name__ == '__main__':
     parser.add_argument('--exp_name', required=True, type=str, help="name of experiment")
     parser.add_argument('--exp_group', default='linear-classification', type=str, help='exp_group that can be used to filter results.')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers to load data')
+    parser.add_argument('--resnet', default='resnet18', type=str, help='Type of resnet: 1. resnet18, resnet34, resnet50')
     
     parser.add_argument('--use_seed', default=False, type=bool, help='Should we make the process deterministic and use seeds?')
     parser.add_argument('--seed', default=0, type=int, help='Number of sweeps over the dataset to train')
@@ -84,7 +86,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--dataset', default='cifar10', type=str, help='dataset to train the model on. Current choices: 1. cifar10 2. imagenet')
     parser.add_argument('--data_path', default='data', type=str, help='Path to dataset')
-
+    parser.add_argument('--num_classes', default=10, type=int, help='Number of classes in dataset')
+    
     parser.add_argument('--optimizer', default='nestorov', type=str, help='Optimizer to use for optimizing the training objective')
 
     args = parser.parse_args()
@@ -134,7 +137,8 @@ if __name__ == '__main__':
 
     ### Model to use for training
     ### Load weights of pretrained model
-    model = Net(num_class=len(train_data.classes), pretrained_path=model_path, model_type=args.model_type).cuda()
+    model = Net(num_class=args.num_classes, pretrained_path=model_path, model_type=args.model_type, feature_dim=args.feature_dim, encoder=args.resnet, 
+            dataset=args.dataset, input_shape=input_shape).cuda()
 
     ### Freeze the weights of the encoder
     for param in model.f.parameters():
