@@ -92,6 +92,7 @@ def train(net, data_loader, train_optimizer):
                 if args.use_jitter_norm:
                     loss += args.lamda1 * (j_djitter1 + j_djitter2)
 
+                j_dcrop1, j_dcrop2 = 0, 0
                 if args.use_single_norm:
                     if p < 0.5:
                         j_dcrop1 = get_crop_norm_loss(net, pos, out_1, params1, params_delta1, eps=1)
@@ -100,7 +101,7 @@ def train(net, data_loader, train_optimizer):
                 else:
                     j_dcrop1 = get_crop_norm_loss(net, pos, out_1, params1, params_delta1, eps=1)
                     j_dcrop2 = get_crop_norm_loss(net, pos, out_2, params2, params_delta2, eps=1)
-                    
+
                 avg_crop += (j_dcrop1 + j_dcrop2).item() * args.batch_size
                 if args.use_crop_norm:
                     loss += args.lamda2 * (j_dcrop1 + j_dcrop2)
