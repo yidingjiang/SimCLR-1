@@ -74,14 +74,33 @@ def train(net, data_loader, train_optimizer):
         
         if args.model_type == 'proposed':
             if args.grad_compute_type == 'default' and args.plot_jac:
-                j_djitter1 = get_jitter_norm_loss(net, pos, out_1, params1, params_delta1, args.eps)
-                j_djitter2 = get_jitter_norm_loss(net, pos, out_2, params2, params_delta2, args.eps)
+                
+                p = np.random.rand()
+                j_djitter1, j_djitter2 = 0, 0
+
+                if args.use_single_norm:
+                    if p < 0.5:
+                        j_djitter1 = get_jitter_norm_loss(net, pos, out_1, params1, params_delta1, args.eps)
+                    else:
+                        j_djitter2 = get_jitter_norm_loss(net, pos, out_2, params2, params_delta2, args.eps)
+
+                else:
+                    j_djitter1 = get_jitter_norm_loss(net, pos, out_1, params1, params_delta1, args.eps)
+                    j_djitter2 = get_jitter_norm_loss(net, pos, out_2, params2, params_delta2, args.eps)
+                
                 avg_jitter += (j_djitter1 + j_djitter2).item() * args.batch_size
                 if args.use_jitter_norm:
                     loss += args.lamda1 * (j_djitter1 + j_djitter2)
 
-                j_dcrop1 = get_crop_norm_loss(net, pos, out_1, params1, params_delta1, eps=1)
-                j_dcrop2 = get_crop_norm_loss(net, pos, out_2, params2, params_delta2, eps=1)
+                if args.use_single_norm:
+                    if p < 0.5:
+                        j_dcrop1 = get_crop_norm_loss(net, pos, out_1, params1, params_delta1, eps=1)
+                    else:
+                        j_dcrop2 = get_crop_norm_loss(net, pos, out_2, params2, params_delta2, eps=1)
+                else:
+                    j_dcrop1 = get_crop_norm_loss(net, pos, out_1, params1, params_delta1, eps=1)
+                    j_dcrop2 = get_crop_norm_loss(net, pos, out_2, params2, params_delta2, eps=1)
+                    
                 avg_crop += (j_dcrop1 + j_dcrop2).item() * args.batch_size
                 if args.use_crop_norm:
                     loss += args.lamda2 * (j_dcrop1 + j_dcrop2)
@@ -186,6 +205,7 @@ if __name__ == '__main__':
     parser.add_argument('--exp_name', required=True, type=str, help="name of experiment")
     parser.add_argument('--exp_group', default='grid_search', type=str, help='exp_group that can be used to filter results.')
     
+    parser.add_argument('--use_single_norm', default=False, type=bool, help='Should we add norm of only one of the images instead of both?')
     parser.add_argument('--use_jitter_norm', default=False, type=bool, help='Should we add norm of gradients wrt jitter to loss?')
     parser.add_argument('--use_crop_norm', default=False, type=bool, help='Should we add norm of gradients wrt jitter to loss?')
     parser.add_argument('--grad_compute_type', default='default', type=str, help='Should we add norm of gradients wrt jitter to loss? (default/centered)')
@@ -197,6 +217,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--dataset', default='cifar10', type=str, help='dataset to train the model on. Current choices: 1. cifar10 2. imagenet')
     parser.add_argument('--data_path', default='data', type=str, help='Path to dataset')
+
 
     parser.add_argument('--test_interval', default=1, type=int, help='How frequently should we test the model with knn?')
     # args parse
