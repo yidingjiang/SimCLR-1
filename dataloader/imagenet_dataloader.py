@@ -91,7 +91,7 @@ def get_augmented_transforms(input_shape):
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
         transforms.RandomGrayscale(p=0.2),
-        GaussianBlur(kernel_size=int(0.1 * input_shape[1])),
+        #GaussianBlur(kernel_size=int(0.1 * input_shape[1]) + 1),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
@@ -104,7 +104,7 @@ def get_augmented_transforms(input_shape):
 
 def get_tensor_transforms():
     train_transform = transforms.Compose([
-        transforms.Resize(256),
+        transforms.Resize(size=(256, 256)),
         transforms.ToTensor(),
     ])
 
@@ -125,7 +125,7 @@ def get_linear_eval_transforms():
     # As specified in Appendix B.5 of "A Simple Framework for Contrastive Learning of Visual Representations" 
     # "For the inference, we resize the given image to 256x256, and take a single center crop of 224x224."
     test_transform = transforms.Compose([
-        transforms.Resize(256),
+        transforms.Resize(size=(256, 256)),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
