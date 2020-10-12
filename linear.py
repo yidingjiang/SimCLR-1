@@ -1,5 +1,5 @@
 import argparse
-
+import os
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -27,7 +27,7 @@ class Net(nn.Module):
             self.f = SimCLRJacobianModel(feature_dim=feature_dim, model=encoder, dataset=dataset, input_shape=input_shape).f
 
         # classifier
-        self.fc = nn.Linear(2048, num_class, bias=True)
+        self.fc = nn.Linear(512, num_class, bias=True)
         self.load_state_dict(torch.load(pretrained_path, map_location='cpu'), strict=False)
 
     def forward(self, x):
@@ -113,13 +113,13 @@ if __name__ == '__main__':
             train_loader, memory_loader, test_loader = load_cifar_data(args.datapath, batch_size, args.num_workers, args.use_seed, args.seed, 
                                                         input_shape=input_shape,
                                                         use_augmentation=True, 
-                                                        load_pair=True,
+                                                        load_pair=False,
                                                         linear_eval=True)
         elif args.dataset == 'imagenet':
             train_loader, memory_loader, test_loader = load_imagenet_data(args.data_path, batch_size, args.num_workers, args.use_seed, args.seed, 
                                                         input_shape=input_shape, 
                                                         use_augmentation=True, 
-                                                        load_pair=True,
+                                                        load_pair=False,
                                                         linear_eval=True)
     elif args.model_type == 'proposed':
         if args.dataset == 'cifar10':
@@ -149,7 +149,7 @@ if __name__ == '__main__':
         optimizer = optim.Adam(model.fc.parameters(), lr=1e-3, weight_decay=1e-6)
     elif args.optimizer == 'nestorov':
         # Hyperparams as specific in SimCLR v1 Appendix section B.5
-        optimizer = optim.SGD(lr=0.8, momentum=0.9, nesterov=True)
+        optimizer = optim.SGD(model.fc.parameters(), lr=0.8, momentum=0.9, nesterov=True)
 
     loss_criterion = nn.CrossEntropyLoss()
     results = {'train_loss': [], 'train_acc@1': [], 'train_acc@5': [],
@@ -162,7 +162,7 @@ if __name__ == '__main__':
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
 
-    save_name_pre = '{}_{}_{}_{}_{}_{}'.format(args.exp_name, args.model_type, feature_dim, k, batch_size, epochs)
+    save_name_pre = '{}_{}_{}_{}_{}_{}'.format(args.exp_name, args.exp_group, args.model_type, args.feature_dim, batch_size, epochs)
 
     best_acc = 0.0
     for epoch in range(1, epochs + 1):
