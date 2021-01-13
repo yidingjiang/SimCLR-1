@@ -80,7 +80,7 @@ def test(net, memory_data_loader, test_data_loader, epoch):
                 data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
 
             feature, out = net(data)
-
+            c = data.size()[-1]
             total_num += data.size(0)
             # compute cos similarity between each feature vector and feature bank ---> [B, N]
             sim_matrix = torch.mm(feature, feature_bank)
