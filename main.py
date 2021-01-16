@@ -66,8 +66,12 @@ def train_adversarial(model, augmentor, data_loader, model_optimizer, augmentor_
             pos_1, pos_2 = pos_1.cuda(non_blocking=True), pos_2.cuda(non_blocking=True)
 
         # repr learning
-        feature_1, out_1 = model(augmentor(pos_1))
-        feature_2, out_2 = model(augmentor(pos_2))
+        if np.random.uniform(size=1) > 1.0: 
+            feature_1, out_1 = model(augmentor(pos_1))
+            feature_2, out_2 = model(augmentor(pos_2))
+        else:
+            feature_1, out_1 = model(augmentor(pos_1))
+            feature_2, out_2 = model(augmentor(pos_2))
         loss = xent_loss(out_1, out_2, args).mean()
 
         model_optimizer.zero_grad()
@@ -88,7 +92,7 @@ def train_adversarial(model, augmentor, data_loader, model_optimizer, augmentor_
         augmentor_optimizer.step()
 
         total_num += batch_size
-        total_loss += loss.item() * batch_size
+        total_loss += aug_loss.item() * batch_size
         train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / total_num))
     return total_loss / total_num
 
@@ -167,11 +171,11 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', default='cifar10', type=str, help='dataset to train the model on. Current choices: 1. cifar10 2. imagenet')
     parser.add_argument('--data_path', default='data', type=str, help='Path to dataset')
     
-    parser.add_argument('--use_adversarial', default=False, type=bool, "Whether to use adversarial training")
-    parser.add_argument('--use_augmentation', default=False, type=bool, "Whether to use original data augmentation")
-    parser.add_argument('--aug_type', default='convnet', type=str, "Which data augmentor to use")
-    parser.add_argument('--aug_clip_output', default=True, type=bool, "If the augmentor clips the output to some range")
-    parser.add_argument('--aug_radius', default=0.05, type=float, 'soft radius of the perturbation')
+    parser.add_argument('--use_adversarial', default=False, type=bool, help="Whether to use adversarial training")
+    parser.add_argument('--use_augmentation', default=True, type=bool, help="Whether to use original data augmentation")
+    parser.add_argument('--aug_type', default='convnet', type=str, help="Which data augmentor to use")
+    parser.add_argument('--aug_clip_output', default=True, type=bool, help="If the augmentor clips the output to some range")
+    parser.add_argument('--aug_radius', default=0.05, type=float, help='soft radius of the perturbation')
     parser.add_argument('--aug_lr', default=0.001, type=float, help='learning rate')
     parser.add_argument('--aug_weight_decay', default=1e-6, type=float, help='learning rate')
     parser.add_argument('--loss_type', default='standard', type=str, help='what type of loss to use')
@@ -204,10 +208,10 @@ if __name__ == '__main__':
 
     if args.dataset == 'cifar10':
         train_loader, memory_loader, test_loader = load_cifar_data(args.data_path, batch_size, args.num_workers, args.use_seed, args.seed, input_shape=(3,32,32), 
-                                                    use_augmentation=args.use_augmentation, load_pair=True)
+                                                    use_augmentation=(not args.use_adversarial), load_pair=True)
     elif args.dataset == 'imagenet':
         train_loader, memory_loader, test_loader = load_imagenet_data(args.data_path, batch_size, args.num_workers, args.use_seed, args.seed, input_shape=(3,224,224), 
-                                                    use_augmentation=arg.use_augmentation, load_pair=True)
+                                                    use_augmentation=(not arg.use_adversarial), load_pair=True)
     else:
         raise ValueError("Unknown dataset {}".format(args.dataset))
 
@@ -239,7 +243,8 @@ if __name__ == '__main__':
     # augmentor
     if args.use_adversarial:
         augmentor = get_augmentor(args)
-        
+        if cuda_available:
+            augmentor = augmentor.cuda()
         total_model_parameters = sum(p.numel() for p in augmentor.parameters())
         total_trainable_parameters = sum(p.numel() for p in augmentor.parameters() if p.requires_grad)
         print('# Total Augmentor param: {} Trainable Params: {}'.format(total_model_parameters, total_trainable_parameters))

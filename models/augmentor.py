@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,16 +12,16 @@ from models.transformer import ExemplarTransformer
 
 def get_augmentor(args):
     augmentor = None
-    if args.augmentor_type == "convnet":
-        augmentor = LpAugmentor(clip=args.aug_type, radius=args.aug_radius)
-    elif args.augmentor_type == "convnet_specnorm":
-        augmentor = LpAugmentorSpecNorm(clip=args.aug_type, radius=args.aug_radius)
-    elif args.augmentor_type == "style_transfer":
-        augmentor = LpAugmentorStyleTransfer(clip=args.aug_type, radius=args.aug_radius)
-    elif args.augmentor_type == "transformer":
-        augmentor = LpAugmentorTransformer(clip=args.aug_type, radius=args.aug_radius)
+    if args.aug_type == "convnet":
+        augmentor = LpAugmentor(clip=args.aug_clip_output, radius=args.aug_radius)
+    elif args.aug_type == "convnet_specnorm":
+        augmentor = LpAugmentorSpecNorm(clip=args.aug_clip_output, radius=args.aug_radius)
+    elif args.aug_type == "style_transfer":
+        augmentor = LpAugmentorStyleTransfer(clip=args.aug_clip_output, radius=args.aug_radius)
+    elif args.aug_type == "transformer":
+        augmentor = LpAugmentorTransformer(clip=args.aug_clip_output, radius=args.aug_radius)
     else:
-        raise ValueError("Unrecognized augmentor type: {}".format(args.augmentor_type))
+        raise ValueError("Unrecognized augmentor type: {}".format(args.aug_type))
     return augmentor
 
 
@@ -42,11 +43,9 @@ class LpAugmentor(nn.Module):
 
     def sample_noise(self, x, batch_size, input_dim):
         noise = [
-            torch.from_numpy(np.float32(np.random.normal(size=[batch_size] + s)))
+            torch.from_numpy(np.float32(np.random.normal(size=[batch_size] + s))).cuda()
             for s in self.noise_shapes(input_dim)
         ]
-        for n in noise:
-            noise.to(x.device)
         return noise
 
     def forward(self, x, noise=None):
@@ -60,8 +59,8 @@ class LpAugmentor(nn.Module):
         h4 = self.l_4(torch.cat((h3, noise[3]), 1))
         if self.clip:
             norm = h4.norm(p=self.p, dim=(1, 2, 3), keepdim=True)
-            h4 = h4.div(norm)
-        out = x + self.raidus * total_size * h4
+            h4 = total_size * h4.div(norm)
+        out = x + self.radius * h4
         return torch.clamp(out, 0.0, 1.0)
 
 
@@ -72,7 +71,7 @@ class LpAugmentorStyleTransfer(nn.Module):
         self.clip = clip
         self.radius = radius
         # Initial convolution layers
-        self.conv1 = ConvLayer(3, 32, kernel_size=9, stride=1)
+        self.conv1 = ConvLayer(4, 32, kernel_size=9, stride=1)
         self.in1 = torch.nn.InstanceNorm2d(32, affine=True)
         self.conv2 = ConvLayer(32, 64, kernel_size=3, stride=2)
         self.in2 = torch.nn.InstanceNorm2d(64, affine=True)
@@ -94,28 +93,30 @@ class LpAugmentorStyleTransfer(nn.Module):
         self.relu = torch.nn.ReLU()
 
     def noise_shapes(self, input_dim):
-        return [[1, input_dim // 4, input_dim // 4]] * 3
+        shape = [[1, input_dim, input_dim]]
+        shape += [[1, input_dim // 4, input_dim // 4]] * 3
+        return shape
 
     def sample_noise(self, x, batch_size, input_dim):
         noise = [
-            torch.from_numpy(np.float32(np.random.normal(size=[batch_size] + s)))
+            torch.from_numpy(np.float32(np.random.uniform(size=[batch_size] + s))).cuda()
             for s in self.noise_shapes(input_dim)
         ]
-        for n in noise:
-            noise.to(x.device)
         return noise
 
     def forward(self, x, noise=None):
+        x_o = x
         shape = x.size()
         total_size = shape[1] * shape[2] * shape[3]
         if not noise:
             noise = self.sample_noise(x, shape[0], shape[2])
+        x = torch.cat((x, noise[0]), 1)
         y = self.relu(self.in1(self.conv1(x)))
         y = self.relu(self.in2(self.conv2(y)))
         y = self.relu(self.in3(self.conv3(y)))
-        y = self.res1(torch.cat((y, noise[0]), 1))
-        y = self.res2(torch.cat((y, noise[1]), 1))
-        y = self.res3(torch.cat((y, noise[2]), 1))
+        y = self.res1(torch.cat((y, noise[1]), 1))
+        y = self.res2(torch.cat((y, noise[2]), 1))
+        y = self.res3(torch.cat((y, noise[3]), 1))
         # y = self.res4(y)
         # y = self.res5(y)
         y = self.relu(self.in4(self.deconv1(y)))
@@ -123,8 +124,8 @@ class LpAugmentorStyleTransfer(nn.Module):
         y = self.deconv3(y)
         if self.clip:
             norm = y.norm(p=1, dim=(1, 2, 3), keepdim=True).detach()
-            y = y.div(norm)
-        out = x + self.radius * total_size * y
+            y = total_size * y.div(norm)
+        out = x_o + self.radius * y
         return torch.clamp(out, 0.0, 1.0)
 
 
@@ -150,7 +151,7 @@ class LpAugmentorSpecNorm(nn.Module):
             for s in self.noise_shapes(input_dim)
         ]
         for n in noise:
-            noise.to(x.device)
+            n.to(x.device)
         return noise
 
     def forward(self, x, noise=None):
@@ -215,11 +216,11 @@ class LpAugmentorTransformer(nn.Module):
 
     def sample_noise(self, x, batch_size, input_dim):
         noise = [
-            torch.from_numpy(np.float32(np.random.normal(size=[batch_size] + s)))
+            torch.from_numpy(np.float32(np.random.uniform(size=[batch_size] + s))).cuda()
             for s in self.noise_shapes(input_dim)
         ]
         for n in noise:
-            noise.to(x.device)
+            n.to(x.device)
         return noise
 
     def forward(self, x, noise=None):

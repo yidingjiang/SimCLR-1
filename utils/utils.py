@@ -21,7 +21,7 @@ def xent_loss(out_1, out_2, args):
     pos_sim = torch.exp(torch.sum(out_1 * out_2, dim=-1) / args.temperature)
     # [2*B]
     pos_sim = torch.cat([pos_sim, pos_sim], dim=0)
-    return loss = (- torch.log(pos_sim / sim_matrix.sum(dim=-1)))
+    return - torch.log(pos_sim / sim_matrix.sum(dim=-1))
 
 
 def compute_jacobian(inputs, output):
