@@ -43,14 +43,17 @@ class OriginalModel(nn.Module):
                 if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
                     self.f.append(module)
             # encoder
-            self.f = nn.Sequential(*self.f)
+            gap_layer = self.f[-1]
+            self.f = nn.Sequential(*self.f[:-1])
         else:
             self.f = resnet(pretrained=False)
             self.f.fc = Identity()
 
         if model == 'resnet18' or model == 'resnet34':
             # projection head
-            self.g = nn.Sequential( nn.Linear(512, 512, bias=False), 
+            self.g = nn.Sequential( gap_layer,
+                                    nn.Flatten(1),
+                                    nn.Linear(512, 512, bias=False), 
                                     nn.BatchNorm1d(512),
                                     nn.ReLU(inplace=True), 
                                     nn.Linear(512, feature_dim, bias=False))
@@ -61,12 +64,18 @@ class OriginalModel(nn.Module):
                                     nn.BatchNorm1d(2048),
                                     nn.ReLU(inplace=True), 
                                     nn.Linear(2048, feature_dim, bias=False))
-
     def forward(self, x):
         x = self.f(x)
+        #print(x.size())
+        out = self.g(x)
         feature = torch.flatten(x, start_dim=1)
-        out = self.g(feature)
-        return F.normalize(feature, dim=-1), F.normalize(out, dim=-1)
+        return feature, F.normalize(out, dim=-1)
+
+    #def forward(self, x):
+    #    x = self.f(x)
+    #    feature = torch.flatten(x, start_dim=1)
+    #    out = self.g(feature)
+    #    return F.normalize(feature, dim=-1), F.normalize(out, dim=-1)
 
 class KorniaAugmentationModule(nn.Module):
     def __init__(self, batch_size=512, hor_flip_prob=0.5, jit_prob=0.8, gs_prob=0.2, strength=1, dataset='imagenet', input_shape=(3, 224, 224)):
