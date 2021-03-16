@@ -411,7 +411,6 @@ class SplitAttention(nn.Module):
         self.scale = dim ** -0.5
         self.pos_only = pos_only
 
-#         self.base_pos_embedding = nn.Parameter(base_pos_embedding, requires_grad=False)
         self.base_pos_embedding = base_pos_embedding
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
         self.to_q_pos = nn.Linear(dim, inner_dim, bias=False)
@@ -445,8 +444,179 @@ class SplitAttention(nn.Module):
 #             dots = torch.einsum("bhid,bhjd->bhij", pos_embedding, base_pos_embedding) * self.scale
 #             qk_pos = [self.to_q_pos(pos_embedding), self.to_k_pos(base_pos_embedding)]
 #             q_pos, k_pos = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=h), qk_pos)
-            # TODO: this can be changed to indentity-ish operation
 #             dots = torch.einsum("bhid,bhjd->bhij", q_pos, k_pos) * self.scale
+
+        mask_value = -torch.finfo(dots.dtype).max
+        if mask is not None:
+            mask = F.pad(mask.flatten(1), (1, 0), value=True)
+            assert mask.shape[-1] == dots.shape[-1], "mask has incorrect dimensions"
+            mask = mask[:, None, :] * mask[:, :, None]
+            dots.masked_fill_(~mask, mask_value)
+            del mask
+
+        attn = dots.softmax(dim=-1)
+        out = torch.einsum("bhij,bhjd->bhid", attn, v)
+        out = rearrange(out, "b h n d -> b n (h d)")
+        out = self.to_out(out)
+        return out
+
+
+#########################################################################################################
+#########################################################################################################
+
+class ExplicitGeometricAugmentor(nn.Module):
+    def __init__(
+        self,
+        *,
+        image_size,
+        patch_size,
+        dim,
+        depth,
+        heads,
+        mlp_dim,
+        # num_noise_token=2,
+        channels=3,
+        dim_head=64,
+        dropout=0.0,
+        emb_dropout=0.0,
+        band_width=1.0,
+        variance_init=0.0,
+    ):
+        super().__init__()
+        num_patches = (image_size // patch_size) ** 2
+        patch_dim = channels * patch_size ** 2
+        self.patch_dim = patch_dim
+        self.num_patches = num_patches
+
+        self.patch_size = patch_size
+
+        # Positional encoding
+        m, n = np.meshgrid(np.arange(image_size // patch_size), np.arange(image_size // patch_size))
+        coord = np.stack((m, n), axis=-1)
+        coord = np.reshape(coord, (-1, 2))
+        self.X = nn.Parameter(torch.from_numpy(coord).float(), requires_grad=False)  # (p*p, 2)
+        self.band_width = nn.Parameter(torch.tensor(band_width), requires_grad=True)
+
+        # Random Transformation
+        # self.I = torch.from_numpy(np.array([[1, 0], [0, 1]])).float()
+        var = variance_init
+        self.A_mean = torch.nn.Parameter(torch.from_numpy(np.array([[1, 0], [0, 1]])).float())
+        self.b_mean = torch.nn.Parameter(torch.from_numpy(np.array([0.0, 0.0])).float())
+        self.A_std = torch.nn.Parameter(torch.from_numpy(np.array([[var, var], [var, var]])).float())
+        self.b_std = torch.nn.Parameter(torch.from_numpy(np.array([var, var])).float())
+
+        self.dim = dim
+        self.patch_to_embedding = nn.Linear(patch_dim, dim)
+        self.embedding_to_patch = nn.Linear(dim, patch_dim)
+        self.dropout = nn.Dropout(emb_dropout)
+
+        self.transformer = ExplicitSplitTransformer(
+            dim, depth, heads, dim_head, mlp_dim, dropout, self.X, self.band_width
+        )
+
+        self.to_latent = nn.Identity()
+
+    def _compute_transformed_coord(self, batch_size):
+        """Transform and compute the position encoding for a batch of coordinates."""
+        A_noise = torch.randn(
+            batch_size, 2, 2
+        ).to(self.X.device)  # convert noise to transformation matrices
+        b_noise = torch.randn(batch_size, 2).to(self.X.device)  # convert noise to offset
+        A = self.A_mean + F.softplus(self.A_std) * A_noise  # (b, 2, 2)
+        b = self.b_mean + F.softplus(self.b_std) * b_noise  # (b, 2)
+        X = repeat(torch.unsqueeze(self.X, 0), "() p d -> b p d", b=batch_size)
+        X_t = X.detach() + torch.einsum("bpd,bdo->bpo", X, A) + rearrange(b, "b d -> b 1 d")
+        return X_t
+
+    def forward(self, img, noise_token, mask=None, pre_embedding=False):
+        del noise_token
+        p = self.patch_size
+
+        if p == 1:
+            x = rearrange(img, "b c h w -> b (h w) c")
+        else:
+            x = rearrange(img, "b c (h p1) (w p2) -> b (h w) (p1 p2 c)", p1=p, p2=p)
+        x = self.patch_to_embedding(x)
+        b, n, _ = x.shape
+
+        pos_embedding = self._compute_transformed_coord(b)
+        # pos_embedding = rearrange(pos_embedding, "b h w d -> b (h w) d")
+        # x = self.dropout(x)
+
+        x = self.transformer(x, pos_embedding, mask)
+        if pre_embedding:
+            return x
+
+        x = self.embedding_to_patch(x)
+        return rearrange(
+            x,
+            "b (h w) (p1 p2 c) -> b c (h p1) (w p2)",
+            h=int(self.num_patches ** 0.5),
+            p1=p,
+            p2=p,
+        )
+
+
+class ExplicitSplitTransformer(nn.Module):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout, base_pos_embedding, band_width, pos_only=True):
+        super().__init__()
+        self.layers = nn.ModuleList([])
+        for _ in range(depth):
+            modules = [
+                PreNorm(
+                    dim,
+                    ExplicitSplitAttention(dim, base_pos_embedding, band_width, heads=heads, dim_head=dim_head, dropout=dropout, pos_only=pos_only),
+                ),
+                Residual(PreNorm(dim, FeedForward(dim, mlp_dim, dropout=dropout))),
+            ]
+            self.layers.append(nn.ModuleList(modules))
+
+    def forward(self, x, pos_embedding, mask=None):
+        for attn, ff in self.layers:
+            x = attn(x, pos_embedding=pos_embedding, mask=mask)
+            x = ff(x)
+        return x
+
+
+class ExplicitSplitAttention(nn.Module):
+
+    def __init__(self, dim, base_pos_embedding, band_width, heads=8, dim_head=64, dropout=0.0, pos_only=False):
+        super().__init__()
+        inner_dim = dim_head * heads
+        self.heads = heads
+        self.scale = dim ** -0.5
+        self.pos_only = pos_only
+
+        self.base_pos_embedding = base_pos_embedding
+        self.band_width = band_width
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
+        self.to_q_pos = nn.Linear(dim, inner_dim, bias=False)
+        self.to_k_pos = nn.Linear(dim, inner_dim, bias=False)
+        self.to_out = nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(dropout))
+
+    def forward(self, x, pos_embedding, mask=None):
+        b, n, _, h = *x.shape, self.heads
+
+        qkv = self.to_qkv(x).chunk(3, dim=-1)
+        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=h), qkv)
+
+        base_pos_embedding = repeat(self.base_pos_embedding.unsqueeze(0), "() n d -> b n d", b=b)
+        print('pos_embedding', pos_embedding.size())
+        print('base_pos_embedding', base_pos_embedding.size())
+        pe = repeat(pos_embedding.unsqueeze(1), 'b () i j -> b r i j', r=n)
+        bpe = repeat(base_pos_embedding.unsqueeze(2), 'b i () j -> b i r j', r=n)
+        diff = pe - bpe
+        print('diff', diff.size())
+        dots = -torch.sum(diff**2, dim=-1) / self.band_width
+#         dots = torch.exp(diff)
+        print('dots', dots.size())
+        print('v', v.size())
+        dots = repeat(dots.unsqueeze(1), "b () i j-> b h i j", h=h)
+        print('dots', dots.size())
+
+        if not self.pos_only:
+            dots = torch.einsum("bhid,bhjd->bhij", q, k) * self.scale
+            dots = (dots + dots_pos) / 2.
 
         mask_value = -torch.finfo(dots.dtype).max
         if mask is not None:
