@@ -525,7 +525,7 @@ class ExplicitGeometricAugmentor(nn.Module):
         A = self.A_mean + F.softplus(self.A_std) * A_noise  # (b, 2, 2)
         b = self.b_mean + F.softplus(self.b_std) * b_noise  # (b, 2)
         X = repeat(torch.unsqueeze(self.X, 0), "() p d -> b p d", b=batch_size)
-        X_t = X.detach() + torch.einsum("bpd,bdo->bpo", X, A) + rearrange(b, "b d -> b 1 d")
+        X_t = torch.einsum("bpd,bdo->bpo", X, A) + rearrange(b, "b d -> b 1 d")
         return X_t
 
     def forward(self, img, noise_token, mask=None, pre_embedding=False):
@@ -627,6 +627,7 @@ class ExplicitSplitAttention(nn.Module):
             del mask
 
         attn = dots.softmax(dim=-1)
+        
         out = torch.einsum("bhij,bhjd->bhid", attn, v)
         out = rearrange(out, "b h n d -> b n (h d)")
         out = self.to_out(out)
