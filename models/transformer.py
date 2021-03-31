@@ -597,13 +597,71 @@ class ExplicitGeometricAugmentor(nn.Module):
 #             x = ff(x)
 #         return x
 
+class TorchLocalAttention(nn.Module):
+    def __init__(self, base_pos_embedding, band_width, kH, kW):
+        super(TorchLocalAttention, self).__init__()
+        self.kH = kH
+        self.kW = kW
+        self.band_width = band_width
+        self.base_pos_embedding = base_pos_embedding
+
+    @staticmethod
+    def f_similar(x_theta, x_phi, kh, kw):
+        n, c, h, w = x_theta.size()  # (N, inter_channels, H, W)
+        pad = (kh // 2, kw // 2)
+        x_theta = x_theta.permute(0, 2, 3, 1).contiguous()
+        x_theta = x_theta.view(n * h * w, c, 1)
+        x_theta = torch.tile(x_theta, (1, 1, kh * kw))
+
+        x_phi = F.unfold(x_phi, kernel_size=(kh, kw), stride=1, padding=pad)
+        x_phi = x_phi.contiguous().view(n, c, kh * kw, h * w)
+        x_phi = x_phi.permute(0, 3, 1, 2).contiguous()
+        x_phi = x_phi.view(n * h * w, c, kh * kw)
+
+        diff = x_theta - x_phi
+        out = -torch.sum(diff**2, dim=-2)
+        out = out.view(n, h, w, kh * kw)
+
+        return out
+
+    @staticmethod
+    def f_weighting(x_theta, x_phi, kh, kw):
+        n, c, h, w = x_theta.size()  # (N, inter_channels, H, W)
+        pad = (kh // 2, kw // 2)
+        x_theta = F.unfold(x_theta, kernel_size=(kh, kw), stride=1, padding=pad)
+        x_theta = x_theta.permute(0, 2, 1).contiguous()
+        x_theta = x_theta.view(n * h * w, c, kh * kw)
+
+        x_phi = x_phi.view(n * h * w, kh * kw, 1)
+
+        out = torch.matmul(x_theta, x_phi)
+        out = out.squeeze(-1)
+        out = out.view(n, h, w, c)
+        out = out.permute(0, 3, 1, 2).contiguous()
+
+        return out
+
+    def forward(self, x, pos_embedding):
+        x = rearrange(x, "b (h w) c -> b c h w", h=32, w=32)
+        coord = rearrange(self.base_pos_embedding, "b (h w) c -> b c h w", h=32, w=32)
+        coord_t = rearrange(pos_embedding, "b (h w) c -> b c h w", h=32, w=32)
+
+        weight = self.f_similar(coord, coord_t, self.kH, self.kW)
+        # weight = self.f_similar(x1, x2, self.kH, self.kW)
+        weight = F.softmax(weight/self.band_width, -1)
+        out = self.f_weighting(x, weight, self.kH, self.kW)
+
+        return out
+
+
 class ExplicitSplitTransformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout, base_pos_embedding, band_width, pos_only=True, identity_v=False):
         super().__init__()
         self.layers = nn.ModuleList([])
         for _ in range(depth):
             modules = [
-                ExplicitSplitAttention(dim, base_pos_embedding, band_width, heads=heads, dim_head=dim_head, dropout=dropout, pos_only=pos_only, identity_v=identity_v),
+                # ExplicitSplitAttention(dim, base_pos_embedding, band_width, heads=heads, dim_head=dim_head, dropout=dropout, pos_only=pos_only, identity_v=identity_v),
+                TorchLocalAttention(base_pos_embedding, band_width, 6, 6),
                 nn.Identity()
             ]
             self.layers.append(nn.ModuleList(modules))
@@ -652,7 +710,6 @@ class ExplicitSplitAttention(nn.Module):
 #         print('dots', dots.size())
 #         print('v', v.size())
         dots = repeat(dots.unsqueeze(1), "b () i j-> b h i j", h=h)
-#         print('dots', dots.size())
 
         if not self.pos_only:
             dots = torch.einsum("bhid,bhjd->bhij", q, k) * self.scale
