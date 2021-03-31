@@ -544,8 +544,8 @@ class ExplicitGeometricAugmentor(nn.Module):
         Wv = self.Wv_mean + F.softplus(self.Wv_std) * Wv_noise
         return x + torch.einsum("bpd, bdo->bpo", x, Wv)
 
-    def forward(self, img, noise_token, mask=None, pre_embedding=False):
-        del noise_token
+    def forward(self, img, mask=None, pre_embedding=False):
+#         print(img.shape)
         p = self.patch_size
 
         if p == 1:
@@ -637,8 +637,8 @@ class ExplicitSplitAttention(nn.Module):
 #         print(x.size())
 #         print(x)
 
-        qkv = self.to_qkv(x).chunk(3, dim=-1)
-        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=h), qkv)
+#         qkv = self.to_qkv(x).chunk(3, dim=-1)
+#         q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=h), qkv)
 
         base_pos_embedding = repeat(self.base_pos_embedding.unsqueeze(0), "() n d -> b n d", b=b)
 #         print('pos_embedding', pos_embedding.size())
@@ -670,7 +670,7 @@ class ExplicitSplitAttention(nn.Module):
         
         if self.identity_v:
             out = torch.einsum("bij,bjd->bid", attn[:,0,:,:], x)
-            print('out', out.size())
+#             print('out', out.size())
         else:
             out = torch.einsum("bhij,bhjd->bhid", attn, v)
             out = rearrange(out, "b h n d -> b n (h d)")
